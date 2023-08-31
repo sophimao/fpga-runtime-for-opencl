@@ -575,7 +575,6 @@ typedef struct acl_device_def_autodiscovery_t {
 typedef struct acl_device_def_t {
   // Back pointer. This is only valid if this def is owned by a dev_prog. In
   // tests, this is not the case.
-  acl_device_program_info dev_prog;
   unsigned int physical_device_id; /* The ID of the physical device that the we
                                       need to "talk" to */
   unsigned int concurrent_reads;   // # of reads that can happen at one time
