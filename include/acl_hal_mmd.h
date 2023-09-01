@@ -149,6 +149,14 @@ struct aocl_mmd_streaming_kernel_arg_info_t {
   std::vector<char> value;
 };
 
+// MMD interface ID cache populated by calling aocl_mmd_get_info with
+// corresponding interface MMD info ID
+typedef struct {
+  int kernel_interface = -1;
+  int pll_interface = -1;
+  int memory_interface = -1;
+} aocl_mmd_interface_info;
+
 // MMD Version checking
 // Since MMD version changes only with major releases it is safe to assume
 // this is a float with at most one decimal
@@ -274,6 +282,7 @@ typedef struct {
 typedef struct {
   int handle;
   std::string name;
+  aocl_mmd_interface_info mmd_ifaces;
   acl_mmd_dispatch_t *mmd_dispatch;
 } acl_mmd_device_t;
 

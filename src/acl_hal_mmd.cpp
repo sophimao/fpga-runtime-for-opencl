@@ -299,11 +299,6 @@ static cl_ulong m_ticks_per_second = 0;
 
 // Handle to the device
 
-// Interfaces
-static int kernel_interface = -1;
-static int pll_interface = -1;
-static int memory_interface = -1;
-
 static int debug_verbosity = 0;
 #define ACL_HAL_DEBUG_MSG_VERBOSE(verbosity, m, ...)                           \
   if (debug_verbosity >= verbosity)                                            \
@@ -1016,6 +1011,9 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
   }
 
   // Get interfaces - for now assume one kernel, one pll and one memory
+  int kernel_interface = -1;
+  int pll_interface = -1;
+  int memory_interface = -1;
   ACL_HAL_DEBUG_MSG_VERBOSE(1,
                             "HAL : Getting interfaces via aocl_mmd_get_info\n");
   device->mmd_dispatch->aocl_mmd_get_info(device->handle,
@@ -1039,12 +1037,12 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
     printf("Error mmd_get_info: handles for kernel, pll, and memory must be "
            "unique and greater than 0\n");
   }
+  device->mmd_ifaces.kernel_interface = kernel_interface;
+  device->mmd_ifaces.pll_interface = pll_interface;
+  device->mmd_ifaces.memory_interface = memory_interface;
+
   device->mmd_dispatch->aocl_mmd_set_status_handler(
       device->handle, acl_hal_mmd_status_handler, NULL);
-
-  kern[physical_device_id].physical_device_id = physical_device_id;
-
-  bsp_io_kern[physical_device_id].debug_verbosity = debug_verbosity;
 
   // Initialize PLL
   if (pll_interface >= 0) {
@@ -1053,8 +1051,7 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
     bsp_io_pll[physical_device_id].write = acl_pll_write;
     bsp_io_pll[physical_device_id].get_time_ns = acl_bsp_get_timestamp;
     bsp_io_pll[physical_device_id].printf = printf;
-    bsp_io_pll[physical_device_id].debug_verbosity =
-        bsp_io_kern[physical_device_id].debug_verbosity;
+    bsp_io_pll[physical_device_id].debug_verbosity = debug_verbosity;
     info_assert(acl_pll_init(&pll[physical_device_id],
                              bsp_io_pll[physical_device_id], "") == 0,
                 "Failed to read PLL config");
@@ -1067,11 +1064,14 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
   }
 
   // Initialize Kernel Interface
+  kern[physical_device_id].physical_device_id = physical_device_id;
+
   bsp_io_kern[physical_device_id].device_info = device;
   bsp_io_kern[physical_device_id].read = acl_kernel_if_read;
   bsp_io_kern[physical_device_id].write = acl_kernel_if_write;
   bsp_io_kern[physical_device_id].get_time_ns = acl_bsp_get_timestamp;
   bsp_io_kern[physical_device_id].printf = printf;
+  bsp_io_kern[physical_device_id].debug_verbosity = debug_verbosity;
 
   bool is_simulator =
       device->mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
@@ -1160,6 +1160,7 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
   }
 
   {
+    // Track if this device is a simulator device
     sys->device[physical_device_id].is_simulator_device = is_simulator;
   }
 
@@ -1765,7 +1766,8 @@ void acl_hal_mmd_copy_hostmem_to_globalmem(cl_event event, const void *src,
 
   s = device_info[physical_device_id].mmd_dispatch->aocl_mmd_write(
       device_info[physical_device_id].handle, (aocl_mmd_op_t)event, size, src,
-      memory_interface, (size_t)ACL_STRIP_PHYSICAL_ID(dest));
+      device_info[physical_device_id].mmd_ifaces.memory_interface,
+      (size_t)ACL_STRIP_PHYSICAL_ID(dest));
   assert(s == 0 && "mmd read/write failed");
 }
 
@@ -1788,7 +1790,8 @@ void acl_hal_mmd_copy_globalmem_to_hostmem(cl_event event, const void *src,
 
   s = device_info[physical_device_id].mmd_dispatch->aocl_mmd_read(
       device_info[physical_device_id].handle, (aocl_mmd_op_t)event, size, dest,
-      memory_interface, (size_t)ACL_STRIP_PHYSICAL_ID(src));
+      device_info[physical_device_id].mmd_ifaces.memory_interface,
+      (size_t)ACL_STRIP_PHYSICAL_ID(src));
   assert(s == 0 && "mmd read/write failed");
 }
 
@@ -1838,7 +1841,8 @@ void acl_hal_mmd_copy_globalmem_to_globalmem(cl_event event, const void *src,
     // Let the MMD provider do the intra-device copy.
     s = device_info[physical_device_id_src].mmd_dispatch->aocl_mmd_copy(
         device_info[physical_device_id_src].handle, (aocl_mmd_op_t)event, size,
-        memory_interface, (size_t)ACL_STRIP_PHYSICAL_ID(src),
+        device_info[physical_device_id_src].mmd_ifaces.memory_interface,
+        (size_t)ACL_STRIP_PHYSICAL_ID(src),
         (size_t)ACL_STRIP_PHYSICAL_ID(dest));
   } else {
     // Copy from device to device via host memory.
@@ -1862,7 +1866,9 @@ void acl_hal_mmd_copy_globalmem_to_globalmem(cl_event event, const void *src,
     // Read the initial block into data[0]
     s = device_info[physical_device_id_src].mmd_dispatch->aocl_mmd_read(
         device_info[physical_device_id_src].handle, NULL, transfer_size,
-        &data[0][0], memory_interface, (size_t)ACL_STRIP_PHYSICAL_ID(src));
+        &data[0][0],
+        device_info[physical_device_id_src].mmd_ifaces.memory_interface,
+        (size_t)ACL_STRIP_PHYSICAL_ID(src));
     src = (const char *)src + transfer_size;
     size -= transfer_size;
 
@@ -1886,13 +1892,15 @@ void acl_hal_mmd_copy_globalmem_to_globalmem(cl_event event, const void *src,
 
       device_info[physical_device_id_dst].mmd_dispatch->aocl_mmd_write(
           device_info[physical_device_id_dst].handle, &dst_dev_done,
-          transfer_size, &data[buffer][0], memory_interface,
+          transfer_size, &data[buffer][0],
+          device_info[physical_device_id_dst].mmd_ifaces.memory_interface,
           (size_t)ACL_STRIP_PHYSICAL_ID(dest));
 
       if (transfer_size_next)
         device_info[physical_device_id_src].mmd_dispatch->aocl_mmd_read(
             device_info[physical_device_id_src].handle, &src_dev_done,
-            transfer_size_next, &data[1 - buffer][0], memory_interface,
+            transfer_size_next, &data[1 - buffer][0],
+            device_info[physical_device_id_src].mmd_ifaces.memory_interface,
             (size_t)ACL_STRIP_PHYSICAL_ID(src));
       else
         src_dev_done = 1;
@@ -1973,7 +1981,6 @@ int acl_hal_mmd_program_device(unsigned int physical_device_id,
   char *sof;
   size_t sof_len;
   bool is_simulator;
-  static cl_bool msg_printed = CL_FALSE;
   int temp_handle = 0;
   acl_assert_locked();
 
@@ -2153,7 +2160,7 @@ int acl_hal_mmd_program_device(unsigned int physical_device_id,
   device_info[physical_device_id].mmd_dispatch->aocl_mmd_set_status_handler(
       device_info[physical_device_id].handle, acl_hal_mmd_status_handler, NULL);
   acl_kernel_if_update(devdef->autodiscovery_def, &kern[physical_device_id]);
-  if (pll_interface >= 0) {
+  if (device_info[physical_device_id].mmd_ifaces.pll_interface >= 0) {
     if (acl_pkg_section_exists(binary, ACL_PKG_SECTION_PLL_CONFIG,
                                &pll_config_len)) {
       info_assert(acl_pll_init(&pll[physical_device_id],
@@ -2661,7 +2668,7 @@ static size_t acl_kernel_if_read(acl_bsp_io *io, dev_addr_t src, char *dest,
                             size, (size_t)src, (size_t)dest);
   return io->device_info->mmd_dispatch->aocl_mmd_read(
              io->device_info->handle, NULL, size, (void *)dest,
-             kernel_interface, (size_t)src) == 0
+             io->device_info->mmd_ifaces.kernel_interface, (size_t)src) == 0
              ? size
              : 0;
 }
@@ -2674,7 +2681,7 @@ static size_t acl_kernel_if_write(acl_bsp_io *io, dev_addr_t dest,
                             size, (size_t)src, (size_t)dest);
   return io->device_info->mmd_dispatch->aocl_mmd_write(
              io->device_info->handle, NULL, size, (const void *)src,
-             kernel_interface, (size_t)dest) == 0
+             io->device_info->mmd_ifaces.kernel_interface, (size_t)dest) == 0
              ? size
              : 0;
 }
@@ -2703,8 +2710,8 @@ static size_t acl_pll_read(acl_bsp_io *io, dev_addr_t src, char *dest,
   ACL_HAL_DEBUG_MSG_VERBOSE(5, "HAL Reading from PLL: %zu bytes %zx -> %zx\n",
                             size, (size_t)src, (size_t)dest);
   return io->device_info->mmd_dispatch->aocl_mmd_read(
-             io->device_info->handle, NULL, size, (void *)dest, pll_interface,
-             (size_t)src) == 0
+             io->device_info->handle, NULL, size, (void *)dest,
+             io->device_info->mmd_ifaces.pll_interface, (size_t)src) == 0
              ? size
              : 0;
 }
@@ -2717,7 +2724,7 @@ static size_t acl_pll_write(acl_bsp_io *io, dev_addr_t dest, const char *src,
                             size, (size_t)src, (size_t)dest);
   return io->device_info->mmd_dispatch->aocl_mmd_write(
              io->device_info->handle, NULL, size, (const void *)src,
-             pll_interface, (size_t)dest) == 0
+             io->device_info->mmd_ifaces.pll_interface, (size_t)dest) == 0
              ? size
              : 0;
 }
@@ -2908,14 +2915,16 @@ size_t acl_hal_mmd_read_csr(unsigned int physical_device_id, uintptr_t offset,
                             void *ptr, size_t size) {
   return device_info[physical_device_id].mmd_dispatch->aocl_mmd_read(
       device_info[physical_device_id].handle, NULL, size, (void *)ptr,
-      kernel_interface, (size_t)offset);
+      device_info[physical_device_id].mmd_ifaces.kernel_interface,
+      (size_t)offset);
 }
 
 size_t acl_hal_mmd_write_csr(unsigned int physical_device_id, uintptr_t offset,
                              const void *ptr, size_t size) {
   return device_info[physical_device_id].mmd_dispatch->aocl_mmd_write(
       device_info[physical_device_id].handle, NULL, size, (const void *)ptr,
-      kernel_interface, (size_t)offset);
+      device_info[physical_device_id].mmd_ifaces.kernel_interface,
+      (size_t)offset);
 }
 
 int acl_hal_mmd_simulation_device_global_interface_read(
