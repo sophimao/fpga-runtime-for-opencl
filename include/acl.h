@@ -584,6 +584,7 @@ typedef struct acl_device_def_t {
   unsigned int shared_capabilities;
   unsigned int device_capabilities;
   size_t min_host_mem_alignment;
+  bool is_simulator_device;
 
   // autodiscovery information that changes every reprogram
   acl_device_def_autodiscovery_t autodiscovery_def;

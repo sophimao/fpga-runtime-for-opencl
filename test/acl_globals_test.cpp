@@ -157,6 +157,7 @@ static acl_system_def_t acltest_simple_system = {
       0,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {"fpga0",
        "sample40byterandomhash000000000000000000",
        0,
@@ -563,6 +564,7 @@ static acl_system_def_t acltest_complex_system = {
       1,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {
           "fpga0",
           "sample40byterandomhash000000000000000000",
@@ -597,6 +599,7 @@ static acl_system_def_t acltest_complex_system = {
       0,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {
           "fpga1",
           "sample40byterandomhash000000000000000001",
@@ -631,6 +634,7 @@ static acl_system_def_t acltest_complex_system = {
       0,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {"fpga2",
        "sample40byterandomhash000000000000000002",
        0,
@@ -655,6 +659,7 @@ static acl_system_def_t acltest_complex_system = {
       0,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {"fpga3",
        "sample40byterandomhash000000000000000003",
        0,
@@ -679,6 +684,7 @@ static acl_system_def_t acltest_complex_system = {
       0,
       0, /* alloc capabilities */
       0, /* min_host_mem_alignment */
+      0, /* is_simulator_device */
       {"fpga4",
        "sample40byterandomhash000000000000000004",
        0,

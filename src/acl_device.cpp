@@ -533,7 +533,8 @@ CL_API_ENTRY cl_int CL_API_CALL clGetDeviceInfoIntelFPGA(
     if (param_name == CL_DEVICE_HOST_MEM_CAPABILITIES_INTEL) {
       capabilities = device->def.host_capabilities;
     } else if (param_name == CL_DEVICE_DEVICE_MEM_CAPABILITIES_INTEL) {
-      if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+      // if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+      if (device->def.is_simulator_device) {
         // Device allocations are not supported in IPA flow which
         // currently runs in simulation only. Return true device
         // allocation capabilities in this case.

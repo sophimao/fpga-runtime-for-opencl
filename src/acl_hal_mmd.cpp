@@ -1073,8 +1073,11 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
   bsp_io_kern[physical_device_id].get_time_ns = acl_bsp_get_timestamp;
   bsp_io_kern[physical_device_id].printf = printf;
 
+  bool is_simulator =
+      device->mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
   info_assert(acl_kernel_if_init(&kern[physical_device_id],
-                                 bsp_io_kern[physical_device_id], sys) == 0,
+                                 bsp_io_kern[physical_device_id], sys,
+                                 is_simulator) == 0,
               "Failed to initialize kernel interface");
 
   acl_kernel_if_reset(&kern[physical_device_id]);
@@ -1154,6 +1157,10 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
     }
     sys->device[physical_device_id].min_host_mem_alignment =
         min_host_mem_alignment;
+  }
+
+  {
+    sys->device[physical_device_id].is_simulator_device = is_simulator;
   }
 
   // Post-PLL config init function - at this point, it's safe to talk to the
@@ -1285,19 +1292,7 @@ acl_mmd_get_system_definition(acl_system_def_t *sys,
 #endif
 
   // Dynamically load board mmd & symbols
-  (void)acl_get_offline_device_user_setting(&use_offline_only);
-  if (use_offline_only == ACL_CONTEXT_MPSIM) {
-
-    // Substitute the simulator MMD layer.
-    auto *result = get_msim_mmd_layer();
-    if (!result)
-      return nullptr;
-    else
-      internal_mmd_dispatch.push_back(*result);
-
-    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Use simulation MMD\n");
-    num_board_pkgs = 1;
-  } else if (IS_VALID_FUNCTION(aocl_mmd_get_offline_info)) {
+  if (IS_VALID_FUNCTION(aocl_mmd_get_offline_info)) {
     num_board_pkgs = 1; // It is illegal to define more than one board package
                         // while statically linking a board package to the host.
     internal_mmd_dispatch.resize(num_board_pkgs);
@@ -1382,6 +1377,19 @@ acl_mmd_get_system_definition(acl_system_def_t *sys,
       printf("Error: Could not load FPGA board libraries successfully.\n");
       return NULL;
     }
+  }
+
+  // Check for and load the simulator MMD layer.
+  (void)acl_get_offline_device_user_setting(&use_offline_only);
+  if (use_offline_only == ACL_CONTEXT_MPSIM) {
+    auto *result = get_msim_mmd_layer();
+    if (!result)
+      return nullptr;
+    else
+      internal_mmd_dispatch.push_back(*result);
+
+    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Loaded simulation MMD\n");
+    num_board_pkgs += 1;
   }
 
   sys->num_devices = 0;
@@ -2047,19 +2055,9 @@ int acl_hal_mmd_program_device(unsigned int physical_device_id,
     fflush(stdout);
   }
 
-  // The message below may interfere with the simulator standard output in some
-  // cases (e.g. features/printf/test), where there are multiple kernels and
-  // resources are released between kernel runs.  For the simulator, only print
-  // this message once. This is a horrible kludge.
-  is_simulator = device_info[physical_device_id]
-                     .mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
-  msg_printed = (cl_bool)CL_FALSE;
-  if (!(is_simulator && msg_printed)) {
-    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Reprogramming device [%d] with handle %d\n",
-                              physical_device_id,
-                              device_info[physical_device_id].handle);
-    msg_printed = CL_TRUE;
-  }
+  ACL_HAL_DEBUG_MSG_VERBOSE(1, "Reprogramming device [%d] with handle %d\n",
+                            physical_device_id,
+                            device_info[physical_device_id].handle);
 
   // mmd check and use the correct reprogram flow accordingly
   // only check the first board package
@@ -2145,6 +2143,8 @@ int acl_hal_mmd_program_device(unsigned int physical_device_id,
       &(device_info[physical_device_id]);
 
   // Tell the simulator (if present) about global memory sizes.
+  is_simulator = device_info[physical_device_id]
+                     .mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
   if (is_simulator) {
     update_simulator(device_info[physical_device_id].handle, physical_device_id,
                      devdef->autodiscovery_def);
