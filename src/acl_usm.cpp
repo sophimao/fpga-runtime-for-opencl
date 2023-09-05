@@ -148,7 +148,11 @@ CL_API_ENTRY void *CL_API_CALL clHostMemAllocINTEL(
     {
       auto mmd_properties_it = mmd_properties.begin();
       if (mem_id) {
-        if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+        // Just test if the first device is simulator device or not
+        // We only support host_alloc on devices with the same MMD dispatch
+        // as of now, so if one device is simulator then all of them should be
+        // if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+        if (devices[0]->def.is_simulator_device) {
           *mmd_properties_it++ = AOCL_MMD_MEM_PROPERTIES_BUFFER_LOCATION;
           *mmd_properties_it++ = *mem_id;
         }
@@ -439,7 +443,8 @@ clSharedMemAllocINTEL(cl_context context, cl_device_id device,
     {
       auto mmd_properties_it = mmd_properties.begin();
       if (mem_id) {
-        if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+        // if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+        if (device->def.is_simulator_device) {
           *mmd_properties_it++ = AOCL_MMD_MEM_PROPERTIES_BUFFER_LOCATION;
           *mmd_properties_it++ = *mem_id;
         }

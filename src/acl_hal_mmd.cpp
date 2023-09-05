@@ -977,6 +977,9 @@ void acl_hal_mmd_get_device_status(cl_uint num_devices,
 int acl_hal_mmd_get_debug_verbosity() { return debug_verbosity; }
 
 // ********************* HAL functions ********************
+static bool l_is_simulator_dispatch(acl_mmd_dispatch_t *mmd_dispatch) {
+  return mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
+}
 
 // Attempt to add a single device
 static int l_try_device(unsigned int physical_device_id, const char *name,
@@ -1073,8 +1076,7 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
   bsp_io_kern[physical_device_id].printf = printf;
   bsp_io_kern[physical_device_id].debug_verbosity = debug_verbosity;
 
-  bool is_simulator =
-      device->mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
+  bool is_simulator = l_is_simulator_dispatch(device->mmd_dispatch);
   info_assert(acl_kernel_if_init(&kern[physical_device_id],
                                  bsp_io_kern[physical_device_id], sys,
                                  is_simulator) == 0,
@@ -2150,8 +2152,7 @@ int acl_hal_mmd_program_device(unsigned int physical_device_id,
       &(device_info[physical_device_id]);
 
   // Tell the simulator (if present) about global memory sizes.
-  is_simulator = device_info[physical_device_id]
-                     .mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
+  is_simulator = l_is_simulator_dispatch(device_info[physical_device_id].mmd_dispatch);
   if (is_simulator) {
     update_simulator(device_info[physical_device_id].handle, physical_device_id,
                      devdef->autodiscovery_def);
@@ -2793,12 +2794,19 @@ void *acl_hal_mmd_shared_alloc(cl_device_id device, size_t size,
 void *acl_hal_mmd_host_alloc(const std::vector<cl_device_id> devices,
                              size_t size, size_t alignment,
                              mem_properties_t *properties, int *error) {
-  // Note we do not support devices in the same context with different MMDs
-  // Safe to get the mmd handle from first device
   void *result = NULL;
   assert(!devices.empty());
+
   unsigned int physical_device_id = devices[0]->def.physical_device_id;
   acl_mmd_dispatch_t *dispatch = device_info[physical_device_id].mmd_dispatch;
+  // For now let's bail out if detected devices with different MMD is passed in
+  for (auto & device: devices) {
+    acl_mmd_dispatch_t *cur_dispatch = 
+        device_info[device->def.physical_device_id].mmd_dispatch;
+    assert(cur_dispatch == dispatch && 
+        "Host allocation is not supported for devices with different MMDs");
+  }
+  // Now we can just used the mmd handle from the first device
   if (!dispatch->aocl_mmd_host_alloc) {
     // Not implemented by the board. It is safe to assume buffer is forgotten
     return result;
@@ -2901,10 +2909,7 @@ void acl_hal_mmd_simulation_streaming_kernel_done(
 void acl_hal_mmd_simulation_set_kernel_cra_address_map(
     unsigned int physical_device_id,
     const std::vector<uintptr_t> &kernel_csr_address_map) {
-  bool is_simulator =
-      device_info[physical_device_id]
-          .mmd_dispatch->aocl_mmd_simulation_set_kernel_cra_address_map != NULL;
-  if (is_simulator) {
+  if (l_is_simulator_dispatch(device_info[physical_device_id].mmd_dispatch)) {
     device_info[physical_device_id]
         .mmd_dispatch->aocl_mmd_simulation_set_kernel_cra_address_map(
             device_info[physical_device_id].handle, kernel_csr_address_map);
