@@ -245,6 +245,10 @@ typedef struct {
 
   double mmd_version;
 
+  int (*aocl_mmd_simulation_register_device_info)(
+      std::vector<std::string> pkg_autodiscoveries,
+      std::vector<std::string> pkg_board_specs);
+
   // Passes streaming kernel argument names and values to simulator.
   void (*aocl_mmd_simulation_streaming_kernel_args)(
       int handle,

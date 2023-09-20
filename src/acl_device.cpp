@@ -7,11 +7,13 @@
 
 // External library headers.
 #include <CL/opencl.h>
+#include <pkg_editor/pkg_editor.h>
 
 // Internal headers.
 #include <acl.h>
 #include <acl_globals.h>
 #include <acl_mem.h>
+#include <acl_platform.h>
 #include <acl_support.h>
 #include <acl_thread.h>
 #include <acl_types.h>
@@ -778,6 +780,124 @@ clSetDeviceExceptionCallbackIntelFPGA(
     devices[i]->exception_notify_user_data = user_data;
     devices[i]->listen_mask = listen_mask;
   }
+
+  return CL_SUCCESS;
+}
+
+CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
+    cl_platform_id platform, const unsigned char **binaries,
+    const size_t *lengths, cl_uint num_entries /*Add more later*/) {
+  // cl_int status = CL_SUCCESS;
+  // cl_uint num_added = 0;
+
+  std::scoped_lock lock{acl_mutex_wrapper};
+
+  if (!acl_platform_is_valid(platform)) {
+    return CL_INVALID_PLATFORM;
+  }
+
+  if ((binaries && num_entries == 0) || (!binaries && num_entries != 0)) {
+    return CL_INVALID_VALUE;
+  }
+
+  // No simulator device to be created, just return success
+  if (num_entries == 0) {
+    return CL_SUCCESS;
+  }
+
+  // Temporary check for 1-sim-device limitation
+  // TODO: Re-enable
+  // static int num_simulator_created = 0; // Alternatively put under platform
+  // if (num_entries + num_simulator_created > 1) {
+  //   return CL_INVALID_VALUE;
+  // }
+
+  for (cl_uint i = 0; i < num_entries; i++) {
+    if (lengths[i] == 0 || binaries[i] == 0) {
+      return CL_INVALID_VALUE;
+    }
+  }
+
+  std::vector<std::string> pkg_autodiscoveries;
+  std::vector<std::string> pkg_board_specs;
+  const bool overwrite = acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL;
+  if (!overwrite) {
+    size_t data_len = 0;
+
+    for (cl_uint i = 0; i < num_entries; i++) {
+      acl_device_binary_t tmp_device_binary;
+      tmp_device_binary.load_content(binaries[i], lengths[i]);
+      const auto pkg = tmp_device_binary.get_binary_pkg();
+      if (!acl_pkg_section_exists(pkg, ".acl.simulator_object", &data_len)) {
+        tmp_device_binary.unload_content();
+        continue; // Ignore non-simulator binaries
+      }
+      // Read autodiscovery string
+      if (!acl_pkg_section_exists(pkg, ".acl.autodiscovery", &data_len)) {
+        // "Malformed program binary: missing .acl.autodiscovery section"
+        tmp_device_binary.unload_content();
+        return CL_INVALID_BINARY;
+      }
+      std::vector<char> pkg_autodiscovery(data_len + 1);
+      if (!acl_pkg_read_section(pkg, ".acl.autodiscovery",
+                                pkg_autodiscovery.data(), data_len + 1)) {
+        tmp_device_binary.unload_content();
+        return CL_INVALID_BINARY;
+      }
+      pkg_autodiscoveries.push_back(std::string(pkg_autodiscovery.data()));
+      if (pkg_autodiscoveries.back().length() < 5) {
+        // "Invalid .acl.autodiscovery section in program binary"
+        tmp_device_binary.unload_content();
+        return CL_INVALID_BINARY;
+      }
+      // Read board_spec.xml
+      if (!acl_pkg_section_exists(pkg, ".acl.board_spec.xml", &data_len)) {
+        // "Malformed program binary: missing .acl.board_spec.xml section"
+        tmp_device_binary.unload_content();
+        return CL_INVALID_BINARY;
+      }
+      std::vector<char> pkg_board_spec(data_len + 1);
+      if (!acl_pkg_read_section(pkg, ".acl.board_spec.xml",
+                                pkg_board_spec.data(), data_len + 1)) {
+        tmp_device_binary.unload_content();
+        return CL_INVALID_BINARY;
+      }
+      pkg_board_specs.push_back(std::string(pkg_board_spec.data()));
+      tmp_device_binary.unload_content();
+    }
+
+    assert(pkg_autodiscoveries.size() == pkg_board_specs.size() &&
+           "ERROR: Autodiscovery string count and board spec count mismatch!");
+    if (pkg_autodiscoveries.size() == 0) {
+      // None of the input binaries are simulator binaries
+      return CL_SUCCESS;
+    }
+  }
+
+  // Adds sim MMD to internal dispatch
+  assert(acl_get_hal()->add_simulator_mmd_to_internal_dispatch() == 0 &&
+         "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
+
+  // This should have updated simulation MMD offline information
+  unsigned num_new_sim_devices = acl_get_hal()->simulation_register_device_info(
+      acl_platform.initial_board_def, acl_platform.num_sim_devices,
+      pkg_autodiscoveries, pkg_board_specs);
+
+  if (num_new_sim_devices == 0) {
+    // No new devices have been added
+    return CL_SUCCESS;
+  }
+
+  // Add devices to platform
+  for (cl_uint i = 0; i < num_new_sim_devices; i++) {
+    int device_idx = static_cast<int>(acl_platform.num_devices);
+    acl_platform.num_devices++;
+    acl_add_device(device_idx);
+  }
+  acl_platform.num_sim_devices += num_new_sim_devices;
+  // TODO: Need to consider offline device as well
+  assert(acl_platform.num_devices ==
+         acl_platform.initial_board_def->num_devices);
 
   return CL_SUCCESS;
 }
