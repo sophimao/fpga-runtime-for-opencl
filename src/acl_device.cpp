@@ -4,6 +4,9 @@
 // System headers.
 #include <assert.h>
 #include <string.h>
+// #include <iostream> // MYDEBUG
+// #include <fstream>
+// #include <sstream>
 
 // External library headers.
 #include <CL/opencl.h>
@@ -535,6 +538,8 @@ CL_API_ENTRY cl_int CL_API_CALL clGetDeviceInfoIntelFPGA(
     if (param_name == CL_DEVICE_HOST_MEM_CAPABILITIES_INTEL) {
       capabilities = device->def.host_capabilities;
     } else if (param_name == CL_DEVICE_DEVICE_MEM_CAPABILITIES_INTEL) {
+      // Why the hardware MMD always returns 0 for device mem capabilities?
+      // If they can return 1 then I don't need this check for mpsim
       // if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
       if (device->def.is_simulator_device) {
         // Device allocations are not supported in IPA flow which
@@ -818,65 +823,69 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
     }
   }
 
-  std::vector<std::string> pkg_autodiscoveries;
-  std::vector<std::string> pkg_board_specs;
-  const bool overwrite = acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL;
-  if (!overwrite) {
-    size_t data_len = 0;
-
-    for (cl_uint i = 0; i < num_entries; i++) {
-      acl_device_binary_t tmp_device_binary;
-      tmp_device_binary.load_content(binaries[i], lengths[i]);
-      const auto pkg = tmp_device_binary.get_binary_pkg();
-      if (!acl_pkg_section_exists(pkg, ".acl.simulator_object", &data_len)) {
-        tmp_device_binary.unload_content();
-        continue; // Ignore non-simulator binaries
-      }
-      // Read autodiscovery string
-      if (!acl_pkg_section_exists(pkg, ".acl.autodiscovery", &data_len)) {
-        // "Malformed program binary: missing .acl.autodiscovery section"
-        tmp_device_binary.unload_content();
-        return CL_INVALID_BINARY;
-      }
-      std::vector<char> pkg_autodiscovery(data_len + 1);
-      if (!acl_pkg_read_section(pkg, ".acl.autodiscovery",
-                                pkg_autodiscovery.data(), data_len + 1)) {
-        tmp_device_binary.unload_content();
-        return CL_INVALID_BINARY;
-      }
-      pkg_autodiscoveries.push_back(std::string(pkg_autodiscovery.data()));
-      if (pkg_autodiscoveries.back().length() < 5) {
-        // "Invalid .acl.autodiscovery section in program binary"
-        tmp_device_binary.unload_content();
-        return CL_INVALID_BINARY;
-      }
-      // Read board_spec.xml
-      if (!acl_pkg_section_exists(pkg, ".acl.board_spec.xml", &data_len)) {
-        // "Malformed program binary: missing .acl.board_spec.xml section"
-        tmp_device_binary.unload_content();
-        return CL_INVALID_BINARY;
-      }
-      std::vector<char> pkg_board_spec(data_len + 1);
-      if (!acl_pkg_read_section(pkg, ".acl.board_spec.xml",
-                                pkg_board_spec.data(), data_len + 1)) {
-        tmp_device_binary.unload_content();
-        return CL_INVALID_BINARY;
-      }
-      pkg_board_specs.push_back(std::string(pkg_board_spec.data()));
-      tmp_device_binary.unload_content();
-    }
-
-    assert(pkg_autodiscoveries.size() == pkg_board_specs.size() &&
-           "ERROR: Autodiscovery string count and board spec count mismatch!");
-    if (pkg_autodiscoveries.size() == 0) {
-      // None of the input binaries are simulator binaries
-      return CL_SUCCESS;
-    }
+  if (acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL) {
+    // In this case we should have created sim devices when platform is created
+    // TODO: or shall we pre-check the paths to make sure they are valid here?
+    return CL_SUCCESS;
   }
 
-  // Adds sim MMD to internal dispatch
-  assert(acl_get_hal()->add_simulator_mmd_to_internal_dispatch() == 0 &&
-         "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
+  std::vector<std::string> pkg_autodiscoveries;
+  std::vector<std::string> pkg_board_specs;
+  size_t data_len = 0;
+
+  for (cl_uint i = 0; i < num_entries; i++) {
+    acl_device_binary_t tmp_device_binary;
+    tmp_device_binary.load_content(binaries[i], lengths[i]);
+    const auto pkg = tmp_device_binary.get_binary_pkg();
+    if (!acl_pkg_section_exists(pkg, ".acl.simulator_object", &data_len)) {
+      tmp_device_binary.unload_content();
+      continue; // Ignore non-simulator binaries
+    }
+    // Read autodiscovery string
+    if (!acl_pkg_section_exists(pkg, ".acl.autodiscovery", &data_len)) {
+      // "Malformed program binary: missing .acl.autodiscovery section"
+      tmp_device_binary.unload_content();
+      return CL_INVALID_BINARY;
+    }
+    std::vector<char> pkg_autodiscovery(data_len + 1);
+    if (!acl_pkg_read_section(pkg, ".acl.autodiscovery",
+                              pkg_autodiscovery.data(), data_len + 1)) {
+      tmp_device_binary.unload_content();
+      return CL_INVALID_BINARY;
+    }
+    /////// MYDEBUG
+    // std::ofstream file("autodis0.txt", std::ios::out|std::ios::binary);
+    // file.write(pkg_autodiscovery.size() ? (char*)&pkg_autodiscovery[0] : 0, 
+    //           std::streamsize(pkg_autodiscovery.size()));
+    ///////////////
+    pkg_autodiscoveries.push_back(std::string(pkg_autodiscovery.data()));
+    if (pkg_autodiscoveries.back().length() < 5) {
+      // "Invalid .acl.autodiscovery section in program binary"
+      tmp_device_binary.unload_content();
+      return CL_INVALID_BINARY;
+    }
+    // Read board_spec.xml
+    if (!acl_pkg_section_exists(pkg, ".acl.board_spec.xml", &data_len)) {
+      // "Malformed program binary: missing .acl.board_spec.xml section"
+      tmp_device_binary.unload_content();
+      return CL_INVALID_BINARY;
+    }
+    std::vector<char> pkg_board_spec(data_len + 1);
+    if (!acl_pkg_read_section(pkg, ".acl.board_spec.xml",
+                              pkg_board_spec.data(), data_len + 1)) {
+      tmp_device_binary.unload_content();
+      return CL_INVALID_BINARY;
+    }
+    pkg_board_specs.push_back(std::string(pkg_board_spec.data()));
+    tmp_device_binary.unload_content();
+  }
+
+  assert(pkg_autodiscoveries.size() == pkg_board_specs.size() &&
+          "ERROR: Autodiscovery string count and board spec count mismatch!");
+  if (pkg_autodiscoveries.size() == 0) {
+    // None of the input binaries are simulator binaries
+    return CL_SUCCESS;
+  }
 
   // This should have updated simulation MMD offline information
   unsigned num_new_sim_devices = acl_get_hal()->simulation_register_device_info(

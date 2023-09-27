@@ -150,8 +150,6 @@ int acl_hal_mmd_set_profile_start_count(unsigned int physical_device_id,
 int acl_hal_mmd_set_profile_stop_count(unsigned int physical_device_id,
                                        unsigned int accel_id, uint64_t value);
 
-int acl_hal_mmd_add_simulator_mmd_to_internal_dispatch();
-
 unsigned acl_hal_mmd_simulation_register_device_info(
     acl_system_def_t *sys, const cl_uint num_sim_devices_created,
     std::vector<std::string> pkg_autodiscoveries,
@@ -287,7 +285,6 @@ static acl_hal_t acl_hal_mmd = {
     acl_hal_mmd_host_alloc,                       // host_alloc
     acl_hal_mmd_free,                             // free
     acl_hal_mmd_shared_alloc,                     // shared_alloc
-    acl_hal_mmd_add_simulator_mmd_to_internal_dispatch, // add_simulator_mmd_to_internal_dispatch
     acl_hal_mmd_simulation_register_device_info, // simulation_register_device_info
     acl_hal_mmd_simulation_streaming_kernel_start, // simulation_streaming_kernel_start
     acl_hal_mmd_simulation_streaming_kernel_done, // simulation_streaming_kernel_done
@@ -981,6 +978,21 @@ static acl_mmd_dispatch_t *l_get_msim_mmd_layer() {
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+}
+
+int l_add_simulator_mmd_to_internal_dispatch() {
+  static bool sim_mmd_loaded = false;
+  if (!sim_mmd_loaded) {
+    auto *result = l_get_msim_mmd_layer();
+    if (!result) {
+      return 1;
+    }
+    internal_mmd_dispatch.push_back(*result);
+    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Loaded simulation MMD\n");
+    num_board_pkgs += 1;
+    sim_mmd_loaded = true;
+  }
+  return 0;
 }
 
 void l_get_physical_devices(acl_mmd_dispatch_t *mmd_dispatch,
@@ -2924,25 +2936,13 @@ int acl_hal_mmd_free(cl_context context, void *mem) {
 }
 
 // ****************** Sim-only MMD functions *******************
-int acl_hal_mmd_add_simulator_mmd_to_internal_dispatch() {
-  static bool sim_mmd_loaded = false;
-  if (!sim_mmd_loaded) {
-    auto *result = l_get_msim_mmd_layer();
-    if (!result) {
-      return 1;
-    }
-    internal_mmd_dispatch.push_back(*result);
-    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Loaded simulation MMD\n");
-    num_board_pkgs += 1;
-    sim_mmd_loaded = true;
-  }
-  return 0;
-}
-
 unsigned acl_hal_mmd_simulation_register_device_info(
     acl_system_def_t *sys, const cl_uint num_sim_devices_created,
     std::vector<std::string> pkg_autodiscoveries,
     std::vector<std::string> pkg_board_specs) {
+  assert(l_add_simulator_mmd_to_internal_dispatch() == 0 &&
+      "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
+
   if (!l_is_simulator_dispatch(&(internal_mmd_dispatch.back()))) {
     // Bail out
     assert(0 && "Sim MMD not at the end of the internal MMD dispatch!");

@@ -240,8 +240,6 @@ typedef struct {
   void *(*shared_alloc)(cl_device_id device, size_t size, size_t alignment,
                         mem_properties_t *properties, int *error);
 
-  int (*add_simulator_mmd_to_internal_dispatch)();
-
   unsigned (*simulation_register_device_info)(
       acl_system_def_t *sys, const cl_uint num_sim_devices_created,
       std::vector<std::string> pkg_autodiscoveries,

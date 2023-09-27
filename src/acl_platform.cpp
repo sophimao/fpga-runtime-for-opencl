@@ -398,6 +398,16 @@ void acl_init_platform(void) {
   }
 
   acl_platform.num_sim_devices = 0; // Start off with 0 sim devices
+  if (acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL) {
+    // TODO: think of a better way to handle this, maybe use std::option?
+    std::vector<std::string> pkg_autodiscoveries;
+    std::vector<std::string> pkg_board_specs;
+    acl_platform.num_sim_devices = 
+      acl_platform.hal->simulation_register_device_info(
+          acl_platform.initial_board_def, acl_platform.num_sim_devices,
+          pkg_autodiscoveries, pkg_board_specs);
+    acl_platform.num_devices += acl_platform.num_sim_devices;
+  }
 
   for (unsigned int i = 0; i < acl_platform.num_devices; i++) {
     // initialize static information for these devices
