@@ -1301,6 +1301,10 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
         min_host_mem_alignment;
   }
 
+  {
+    sys->device[physical_device_id].is_simulator_device = is_simulator;
+  }
+
   // Post-PLL config init function - at this point, it's safe to talk to the
   // kernel CSR registers.
   if (acl_kernel_if_post_pll_config_init(&kern[physical_device_id]))

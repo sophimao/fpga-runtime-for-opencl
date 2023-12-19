@@ -170,13 +170,15 @@ void acl_device_binary_t::reload_content() const {
 // and the content of some of them must match the device program hash, etc.
 cl_int acl_device_binary_t::load_binary_pkg(int validate_compile_options,
                                             int validate_memory_layout) {
-  cl_int is_simulator;
+  cl_int is_sim_binary;
   auto context = get_dev_prog()->program->context;
 #define FAILREAD_MSG "Could not read parts of the program binary."
   size_t data_len = 0;
 
   acl_assert_locked();
+  bool is_sim_device = get_dev_prog()->device->def.is_simulator_device;
 
+  // TODO: remove this section
   if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM &&
       !validate_compile_options &&
       context->compiler_mode != CL_CONTEXT_COMPILER_MODE_OFFLINE_INTELFPGA &&
@@ -254,8 +256,7 @@ cl_int acl_device_binary_t::load_binary_pkg(int validate_compile_options,
   // Note that this step must be done before new autodiscovery is loaded in the
   // runtime.
   if (acl_pkg_section_exists(pkg, ".acl.rand_hash", &data_len) &&
-      dev_prog->device->loaded_bin == nullptr &&
-      acl_platform.offline_mode != ACL_CONTEXT_MPSIM) {
+      dev_prog->device->loaded_bin == nullptr && !is_sim_device) {
     std::vector<char> pkg_rand_hash(data_len + 1);
     AND_CHECK(acl_pkg_read_section(pkg, ".acl.rand_hash", pkg_rand_hash.data(),
                                    data_len + 1),
@@ -302,7 +303,8 @@ cl_int acl_device_binary_t::load_binary_pkg(int validate_compile_options,
       // For simulator flow, we treat as if the device has already been
       // programmed and check device global memory layout against
       // dev_prog->device->last_bin
-      if (acl_platform.offline_mode == ACL_CONTEXT_MPSIM) {
+      // TODO: think if this can be removed
+      if (is_sim_device) {
         if (validate_memory_layout && dev_prog->device->last_bin) {
           AND_CHECK(get_devdef().autodiscovery_def.num_global_mem_systems <=
                             1 ||
@@ -351,16 +353,17 @@ cl_int acl_device_binary_t::load_binary_pkg(int validate_compile_options,
     }
   }
 
-  is_simulator = 0;
+  is_sim_binary = 0;
   if (status == CL_SUCCESS &&
       acl_pkg_section_exists(pkg, ".acl.simulator_object", &data_len)) {
-    if (acl_platform.offline_mode != ACL_CONTEXT_MPSIM) {
+    if (!is_sim_device) {
+      // Check if the binary is for simulation but the device is not
       acl_context_callback(
           context,
-          "aocx contains simulated kernel, but simulation mode not set!");
+          "aocx contains simulated kernel, but targeting non-simulation device!");
       status = CL_INVALID_BINARY;
     } else {
-      is_simulator = 1;
+      is_sim_binary = 1;
       // Don't validate the compiler options for simulator.
       // This is equivalent to having a pre-loaded aocx.
       validate_compile_options = 0;
@@ -379,10 +382,10 @@ cl_int acl_device_binary_t::load_binary_pkg(int validate_compile_options,
         context,
         "aocx contains unsupported legacy opencl emulated kernel for windows!");
   }
-  if (status == CL_SUCCESS && acl_platform.offline_mode == ACL_CONTEXT_MPSIM &&
-      !is_simulator) {
+  if (status == CL_SUCCESS && is_sim_device && !is_sim_binary) {
+    // Check if the binary is not for simulation but the device is
     acl_context_callback(context,
-                         "Simulation mode set but aocx is for hardware!");
+                         "Targeting simulation device but aocx is for hardware!");
     status = CL_INVALID_BINARY;
   }
 
