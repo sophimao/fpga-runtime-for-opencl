@@ -288,6 +288,9 @@ typedef struct {
                                                     size_t *buffer_size,
                                                     int *status);
 
+  int (*aocl_mmd_simulation_register_device_info)(
+      std::vector<std::string> pkg_autodiscoveries,
+      std::vector<std::string> pkg_board_specs);
 } acl_mmd_dispatch_t;
 
 typedef struct {

@@ -197,6 +197,11 @@ size_t acl_hal_mmd_hostchannel_sideband_push_no_ack(
     unsigned int physical_device_id, unsigned int port_name, int channel_handle,
     const void *host_buffer, size_t write_size, int *status);
 
+unsigned acl_hal_mmd_simulation_register_device_info(
+    acl_system_def_t *sys, const cl_uint num_sim_devices_created,
+    std::vector<std::string> pkg_autodiscoveries,
+    std::vector<std::string> pkg_board_specs);
+
 static size_t acl_kernel_if_read(acl_bsp_io *io, dev_addr_t src, char *dest,
                                  size_t size);
 static size_t acl_kernel_if_write(acl_bsp_io *io, dev_addr_t dest,
@@ -324,6 +329,7 @@ static acl_hal_t acl_hal_mmd = {
     acl_hal_mmd_hostchannel_sideband_push_no_ack, // hostchannel_sideband_push
     acl_hal_mmd_hostchannel_pull_no_ack,          // hostchannel_pull_no_ack
     acl_hal_mmd_hostchannel_push_no_ack,          // hostchannel_push_no_ack
+    acl_hal_mmd_simulation_register_device_info, // simulation_register_device_info
 };
 
 // **************************************************************************
@@ -1068,6 +1074,21 @@ static acl_mmd_dispatch_t *l_get_msim_mmd_layer() {
 #endif
 }
 
+int l_add_simulator_mmd_to_internal_dispatch() {
+  static bool sim_mmd_loaded = false;
+  if (!sim_mmd_loaded) {
+    auto *result = l_get_msim_mmd_layer();
+    if (!result) {
+      return -1;
+    }
+    internal_mmd_dispatch.push_back(*result);
+    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Loaded simulation MMD\n");
+    num_board_pkgs += 1;
+    sim_mmd_loaded = true;
+  }
+  return 0;
+}
+
 static bool l_is_simulator_dispatch(acl_mmd_dispatch_t *mmd_dispatch) {
   return mmd_dispatch->aocl_mmd_simulation_device_info != NULL;
 }
@@ -1386,7 +1407,6 @@ ACL_HAL_EXPORT const acl_hal_t *
 acl_mmd_get_system_definition(acl_system_def_t *sys,
                               acl_mmd_library_names_t *_libraries_to_load) {
   char *hal_debug_var;
-  int use_offline_only;
 
 #ifdef _WIN32
   // We're really relying on this being called before anything else
@@ -1435,19 +1455,7 @@ acl_mmd_get_system_definition(acl_system_def_t *sys,
 #endif
 
   // Dynamically load board mmd & symbols
-  (void)acl_get_offline_device_user_setting(&use_offline_only);
-  if (use_offline_only == ACL_CONTEXT_MPSIM) {
-
-    // Substitute the simulator MMD layer.
-    auto *result = l_get_msim_mmd_layer();
-    if (!result)
-      return nullptr;
-    else
-      internal_mmd_dispatch.push_back(*result);
-
-    ACL_HAL_DEBUG_MSG_VERBOSE(1, "Use simulation MMD\n");
-    num_board_pkgs = 1;
-  } else if (IS_VALID_FUNCTION(aocl_mmd_get_offline_info)) {
+  if (IS_VALID_FUNCTION(aocl_mmd_get_offline_info)) {
     num_board_pkgs = 1; // It is illegal to define more than one board package
                         // while statically linking a board package to the host.
     internal_mmd_dispatch.resize(num_board_pkgs);
@@ -3102,6 +3110,38 @@ size_t acl_hal_mmd_write_csr(unsigned int physical_device_id, uintptr_t offset,
       device_info[physical_device_id].handle, NULL, size, (const void *)ptr,
       device_info[physical_device_id].mmd_ifaces.kernel_interface,
       (size_t)offset);
+}
+
+unsigned acl_hal_mmd_simulation_register_device_info(
+    acl_system_def_t *sys, const cl_uint num_sim_devices_created,
+    std::vector<std::string> pkg_autodiscoveries,
+    std::vector<std::string> pkg_board_specs) {
+  assert(l_add_simulator_mmd_to_internal_dispatch() == 0 &&
+      "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
+
+  if (!l_is_simulator_dispatch(&(internal_mmd_dispatch.back()))) {
+    // Bail out
+    assert(0 && "Sim MMD not at the end of the internal MMD dispatch!");
+  }
+
+  assert(
+      internal_mmd_dispatch.back().aocl_mmd_simulation_register_device_info !=
+      NULL);
+  // Register board spec and autodiscovery strings, this should update
+  // simulation MMD offline information
+  // TODO: might be good to have a return code
+  int status =
+      internal_mmd_dispatch.back().aocl_mmd_simulation_register_device_info(
+          pkg_autodiscoveries, pkg_board_specs);
+  assert(status == 0 && "Sim MMD unable to register device information!");
+
+  // Now update device informations
+  unsigned sim_physical_devices = 0;
+  l_get_physical_devices(&(internal_mmd_dispatch.back()), sim_physical_devices);
+  unsigned num_new_sim_devices = sim_physical_devices - num_sim_devices_created;
+  sys->num_devices += num_new_sim_devices;
+  num_physical_devices += num_new_sim_devices;
+  return num_new_sim_devices;
 }
 
 void acl_hal_mmd_simulation_streaming_kernel_start(

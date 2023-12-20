@@ -78,7 +78,6 @@ static void l_initialize_offline_devices(int offline_mode);
 static void l_initialize_devices(const acl_system_def_t *present_board_def,
                                  int offline_mode, unsigned int num_devices,
                                  const cl_device_id *devices);
-static void l_add_device(int idx);
 
 //////////////////////////////
 // OpenCL API
@@ -398,9 +397,24 @@ void acl_init_platform(void) {
     break;
   }
 
+  acl_platform.num_sim_devices = 0; // Start off with 0 sim devices
+  // TODO: Remove support for CL_CONTEXT_MPSIM_DEVICE_INTELFPGA after
+  //       SYCL runtime change gets in
+  if (acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL ||
+      acl_getenv("CL_CONTEXT_MPSIM_DEVICE_INTELFPGA") != NULL) {
+    // TODO: think of a better way to handle this, maybe use std::option?
+    std::vector<std::string> pkg_autodiscoveries;
+    std::vector<std::string> pkg_board_specs;
+    acl_platform.num_sim_devices = 
+      acl_platform.hal->simulation_register_device_info(
+          acl_platform.initial_board_def, acl_platform.num_sim_devices,
+          pkg_autodiscoveries, pkg_board_specs);
+    acl_platform.num_devices += acl_platform.num_sim_devices;
+  }
+
   for (unsigned int i = 0; i < acl_platform.num_devices; i++) {
     // initialize static information for these devices
-    l_add_device(static_cast<int>(i));
+    acl_add_device(static_cast<int>(i));
   }
 
   l_initialize_offline_devices(acl_platform.offline_mode);
@@ -574,7 +588,7 @@ static void l_initialize_offline_devices(int offline_mode) {
   shipped_board_defs.clear();
   for (const auto &board_cfg : acl_shipped_board_cfgs) {
     // This is always different storage.
-    // We need this because l_add_device will just pointer-copy the
+    // We need this because acl_add_device will just pointer-copy the
     // acl_device_def_t.
     auto &board_def = shipped_board_defs.emplace_back();
     board_def.emplace();
@@ -683,7 +697,7 @@ static void l_initialize_devices(const acl_system_def_t *present_board_def,
 
 /* Intitializes the static information for the device. This is agnostic of
    Simulator or HW.*/
-static void l_add_device(int idx) {
+void acl_add_device(int idx) {
   acl_assert_locked();
   acl_print_debug_msg("adding device %d\n", idx);
 

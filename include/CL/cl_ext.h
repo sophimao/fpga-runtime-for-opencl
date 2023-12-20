@@ -2503,6 +2503,24 @@ clEnqueueWriteGlobalVariableINTEL_fn)(
     const cl_event* event_wait_list,
     cl_event* event) CL_API_SUFFIX__VERSION_1_0;
 
+/************************************************
+* cl_intel_simulation_device_selector extension *
+*************************************************/
+
+extern CL_API_ENTRY cl_int CL_API_CALL
+clCreateSimulationDeviceINTEL(
+    cl_platform_id platform,
+    const unsigned char **binaries,
+    const size_t *lengths,
+    cl_uint num_entries) CL_API_SUFFIX__VERSION_1_0;
+
+typedef cl_int (CL_API_CALL *
+clCreateSimulationDeviceINTEL_fn)(
+    cl_platform_id platform,
+    const unsigned char **binaries,
+    const size_t *lengths,
+    cl_uint num_entries) CL_API_SUFFIX__VERSION_1_0;
+
 /******************************************
 * cl_intel_mem_channel_property extension *
 *******************************************/

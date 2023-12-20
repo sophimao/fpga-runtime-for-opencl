@@ -21,6 +21,7 @@ extern int platform_owner_tid;
 void acl_init_platform(void);
 void acl_finalize_init_platform(unsigned int num_devices,
                                 const cl_device_id *devices);
+void acl_add_device(int idx);
 const char *acl_platform_extensions(void);
 
 #if defined(__cplusplus)

@@ -302,6 +302,11 @@ typedef struct {
                                     int channel_handle, const void *host_buffer,
                                     size_t write_size, int *status);
 
+  unsigned (*simulation_register_device_info)(
+      acl_system_def_t *sys, const cl_uint num_sim_devices_created,
+      std::vector<std::string> pkg_autodiscoveries,
+      std::vector<std::string> pkg_board_specs);
+
 } acl_hal_t;
 
 /// Linked list of MMD library names to load.

@@ -1700,6 +1700,8 @@ typedef struct _cl_platform_id
 
   // Number of devices supported in this incarnation
   cl_uint num_devices;
+  // Number of simulator devices among all devices supported
+  cl_uint num_sim_devices;
   struct _cl_device_id device[ACL_MAX_DEVICE]; // [0..num_devices-1]
 
   // The memory allocator.
