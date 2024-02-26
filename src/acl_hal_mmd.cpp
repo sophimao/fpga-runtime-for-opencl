@@ -199,8 +199,8 @@ size_t acl_hal_mmd_hostchannel_sideband_push_no_ack(
 
 unsigned acl_hal_mmd_simulation_register_device_info(
     acl_system_def_t *sys, const cl_uint num_sim_devices_created,
-    std::vector<std::string> pkg_autodiscoveries,
-    std::vector<std::string> pkg_board_specs);
+    const std::vector<std::string> &pkg_autodiscoveries,
+    const std::vector<std::string> &pkg_board_specs);
 
 static size_t acl_kernel_if_read(acl_bsp_io *io, dev_addr_t src, char *dest,
                                  size_t size);
@@ -1322,9 +1322,7 @@ static int l_try_device(unsigned int physical_device_id, const char *name,
         min_host_mem_alignment;
   }
 
-  {
-    sys->device[physical_device_id].is_simulator_device = is_simulator;
-  }
+  { sys->device[physical_device_id].is_simulator_device = is_simulator; }
 
   // Post-PLL config init function - at this point, it's safe to talk to the
   // kernel CSR registers.
@@ -1531,14 +1529,13 @@ acl_mmd_get_system_definition(acl_system_def_t *sys,
     // Call twice. Once to count number of libraries and once to load them
     result_status = l_load_board_libraries(CL_FALSE);
     if (!result_status) {
-      ACL_HAL_DEBUG_MSG_VERBOSE(
-          1, "Error: Could not load FPGA board libraries successfully.\n");
-      return NULL;
+      ACL_HAL_DEBUG_MSG_VERBOSE(1, "Warning: Could not count FPGA hardware "
+                                   "board libraries successfully.\n");
     }
     result_status = l_load_board_libraries(CL_TRUE);
     if (!result_status) {
-      printf("Error: Could not load FPGA board libraries successfully.\n");
-      return NULL;
+      ACL_HAL_DEBUG_MSG_VERBOSE(1, "Warning: Could not load FPGA hardware "
+                                   "board libraries successfully.\n");
     }
   }
 
@@ -2995,6 +2992,7 @@ void *acl_hal_mmd_shared_alloc(cl_device_id device, size_t size,
   // Note we do not support devices in the same context with different MMDs
   // Safe to get the mmd handle from first device
   void *result = NULL;
+  assert(device != nullptr && "Device pointer is null for shared alloc");
   unsigned int physical_device_id = device->def.physical_device_id;
   acl_mmd_dispatch_t *dispatch = device_info[physical_device_id].mmd_dispatch;
   if (!dispatch->aocl_mmd_shared_alloc) {
@@ -3029,12 +3027,20 @@ void *acl_hal_mmd_shared_alloc(cl_device_id device, size_t size,
 void *acl_hal_mmd_host_alloc(const std::vector<cl_device_id> devices,
                              size_t size, size_t alignment,
                              mem_properties_t *properties, int *error) {
-  // Note we do not support devices in the same context with different MMDs
-  // Safe to get the mmd handle from first device
   void *result = NULL;
   assert(!devices.empty());
+
+  // We do not support devices in the same context with different MMDs for now
   unsigned int physical_device_id = devices[0]->def.physical_device_id;
   acl_mmd_dispatch_t *dispatch = device_info[physical_device_id].mmd_dispatch;
+  for (auto &device : devices) {
+    unsigned int physical_device_id_cmp = device->def.physical_device_id;
+    if (dispatch != device_info[physical_device_id_cmp].mmd_dispatch) {
+      assert(0 &&
+             "Host allocation is not supported on devices with different MMDs");
+    }
+  }
+  // Now just use the mmd handle from the first device
   if (!dispatch->aocl_mmd_host_alloc) {
     // Not implemented by the board. It is safe to assume buffer is forgotten
     return result;
@@ -3075,13 +3081,21 @@ void *acl_hal_mmd_host_alloc(const std::vector<cl_device_id> devices,
 }
 
 int acl_hal_mmd_free(cl_context context, void *mem) {
-  // This call is device agnostic get the mmd handle from first device
-  // Note we do not support devices in the same context with different MMDs
+  int result = 0;
+
+  // We do not support devices in the same context with different MMDs for now
   cl_device_id device = context->device[0];
   unsigned int physical_device_id = device->def.physical_device_id;
   acl_mmd_dispatch_t *dispatch = device_info[physical_device_id].mmd_dispatch;
-  int result = 0;
+  for (size_t i = 0; i < context->num_devices; i++) {
+    if (dispatch !=
+        device_info[context->device[i]->def.physical_device_id].mmd_dispatch) {
+      assert(0 &&
+             "Host allocation is not supported on devices with different MMDs");
+    }
+  }
 
+  // This call is device agnostic get the mmd handle from first device
   if (!dispatch->aocl_mmd_free) {
     // Not implemented by the board. It is safe to assume buffer is forgotten
     return result;
@@ -3114,10 +3128,10 @@ size_t acl_hal_mmd_write_csr(unsigned int physical_device_id, uintptr_t offset,
 
 unsigned acl_hal_mmd_simulation_register_device_info(
     acl_system_def_t *sys, const cl_uint num_sim_devices_created,
-    std::vector<std::string> pkg_autodiscoveries,
-    std::vector<std::string> pkg_board_specs) {
+    const std::vector<std::string> &pkg_autodiscoveries,
+    const std::vector<std::string> &pkg_board_specs) {
   assert(l_add_simulator_mmd_to_internal_dispatch() == 0 &&
-      "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
+         "ERROR: Failed to add simulator MMD to internal MMD dispatch!");
 
   if (!l_is_simulator_dispatch(&(internal_mmd_dispatch.back()))) {
     // Bail out

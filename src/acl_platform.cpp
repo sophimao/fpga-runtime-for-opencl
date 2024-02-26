@@ -402,13 +402,10 @@ void acl_init_platform(void) {
   //       SYCL runtime change gets in
   if (acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL ||
       acl_getenv("CL_CONTEXT_MPSIM_DEVICE_INTELFPGA") != NULL) {
-    // TODO: think of a better way to handle this, maybe use std::option?
-    std::vector<std::string> pkg_autodiscoveries;
-    std::vector<std::string> pkg_board_specs;
     acl_platform.num_sim_devices = 
       acl_platform.hal->simulation_register_device_info(
           acl_platform.initial_board_def, acl_platform.num_sim_devices,
-          pkg_autodiscoveries, pkg_board_specs);
+          std::vector<std::string>(), std::vector<std::string>());
     acl_platform.num_devices += acl_platform.num_sim_devices;
   }
 

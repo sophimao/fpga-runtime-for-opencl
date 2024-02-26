@@ -852,10 +852,7 @@ clSetDeviceExceptionCallbackIntelFPGA(
 
 CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
     cl_platform_id platform, const unsigned char **binaries,
-    const size_t *lengths, cl_uint num_entries /*Add more later*/) {
-  // cl_int status = CL_SUCCESS;
-  // cl_uint num_added = 0;
-
+    const size_t *lengths, cl_uint num_entries, cl_uint *num_devices_created) {
   std::scoped_lock lock{acl_mutex_wrapper};
 
   if (!acl_platform_is_valid(platform)) {
@@ -871,13 +868,6 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
     return CL_SUCCESS;
   }
 
-  // Temporary check for 1-sim-device limitation
-  // TODO: Re-enable
-  // static int num_simulator_created = 0; // Alternatively put under platform
-  // if (num_entries + num_simulator_created > 1) {
-  //   return CL_INVALID_VALUE;
-  // }
-
   for (cl_uint i = 0; i < num_entries; i++) {
     if (lengths[i] == 0 || binaries[i] == 0) {
       return CL_INVALID_VALUE;
@@ -885,8 +875,7 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
   }
 
   if (acl_getenv("INTELFPGA_SIM_DEVICE_SPEC_DIR") != NULL) {
-    // In this case we should have created sim devices when platform is created
-    // TODO: or shall we pre-check the paths to make sure they are valid here?
+    // If the override environment variable is set this function does nothing
     return CL_SUCCESS;
   }
 
@@ -927,8 +916,8 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
       return CL_INVALID_BINARY;
     }
     std::vector<char> pkg_board_spec(data_len + 1);
-    if (!acl_pkg_read_section(pkg, ".acl.board_spec.xml",
-                              pkg_board_spec.data(), data_len + 1)) {
+    if (!acl_pkg_read_section(pkg, ".acl.board_spec.xml", pkg_board_spec.data(),
+                              data_len + 1)) {
       tmp_device_binary.unload_content();
       return CL_INVALID_BINARY;
     }
@@ -937,10 +926,14 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
   }
 
   assert(pkg_autodiscoveries.size() == pkg_board_specs.size() &&
-          "ERROR: Autodiscovery string count and board spec count mismatch!");
+         "ERROR: Autodiscovery string count and board spec count mismatch!");
+  // None of the input binaries are simulator binaries
   if (pkg_autodiscoveries.size() == 0) {
-    // None of the input binaries are simulator binaries
     return CL_SUCCESS;
+  }
+  // Temporary check for 1-sim-device limitation
+  if (pkg_autodiscoveries.size() + acl_platform.num_sim_devices > 1) {
+    return CL_INVALID_VALUE;
   }
 
   // This should have updated simulation MMD offline information
@@ -963,6 +956,10 @@ CL_API_ENTRY cl_int clCreateSimulationDeviceINTEL(
   // TODO: Need to consider offline device as well
   assert(acl_platform.num_devices ==
          acl_platform.initial_board_def->num_devices);
+
+  if (num_devices_created) {
+    *num_devices_created = num_new_sim_devices;
+  }
 
   return CL_SUCCESS;
 }
