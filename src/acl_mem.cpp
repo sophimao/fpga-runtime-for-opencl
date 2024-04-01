@@ -90,10 +90,10 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
                                 unsigned physical_device_id,
                                 unsigned target_mem_id, unsigned bank_id,
                                 acl_addr_range_t *working_range,
-                                void **initial_try);
+                                void **initial_try, int interleave_changed=0);
 static int acl_allocate_block(acl_block_allocation_t *block_allocation,
                               const cl_mem mem, unsigned physical_device_id,
-                              unsigned target_mem_id);
+                              unsigned target_mem_id, int interleave_changed=0);
 static int copy_image_metadata(cl_mem mem);
 static void remove_mem_block_linked_list(acl_block_allocation_t *block);
 static cl_bool is_image(cl_mem mem);
@@ -413,6 +413,7 @@ CL_API_ENTRY cl_mem clCreateBufferWithPropertiesINTEL(
     cl_context context, const cl_mem_properties_intel *properties,
     cl_mem_flags flags, size_t size, void *host_ptr, cl_int *errcode_ret) {
 
+  std::cout << "clCreateBufferWithPropertiesINTEL Burst\n";
   cl_mem result = 0;
   cl_mem mem;
   cl_bool context_has_device_with_only_svm;
@@ -3389,6 +3390,7 @@ CL_API_ENTRY cl_int CL_API_CALL clEnqueueReadBufferIntelFPGA(
     cl_command_queue command_queue, cl_mem buffer, cl_bool blocking_read,
     size_t offset, size_t cb, void *ptr, cl_uint num_events,
     const cl_event *events, cl_event *event) {
+  std::cout << "clEnqueueReadBufferIntelFPGA Burst\n";
   size_t tmp_src_offset[3];
   size_t tmp_dst_offset[3];
   size_t tmp_cb[3];
@@ -3517,6 +3519,7 @@ CL_API_ENTRY cl_int CL_API_CALL clEnqueueWriteBufferIntelFPGA(
     cl_command_queue command_queue, cl_mem buffer, cl_bool blocking_write,
     size_t offset, size_t cb, const void *ptr, cl_uint num_events,
     const cl_event *events, cl_event *event) {
+  std::cout << "clEnqueueWriteBufferIntelFPGA Burst\n";
   size_t tmp_src_offset[3];
   size_t tmp_dst_offset[3];
   size_t tmp_cb[3];
@@ -4540,9 +4543,10 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
                                 unsigned physical_device_id,
                                 unsigned target_mem_id, unsigned bank_id,
                                 acl_addr_range_t *working_range,
-                                void **initial_try) {
+                                void **initial_try, int interleave_changed) {
   acl_assert_locked();
 
+  std::cout << "l_get_working_range Burst\n";
   if (block_allocation->region == &(acl_platform.global_mem)) {
     const auto *global_mem_defs = &(acl_platform.device[physical_device_id]
                                         .def.autodiscovery_def.global_mem_defs);
@@ -4572,7 +4576,10 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
     // a free block somewhere between the requested bank and end of memory, it
     // will try again from the beginning of memory. WARNING: Nothing prevents
     // the block from straddling across two banks
-    if (bank_id > 0) {
+    unsigned int burst_interleave = interleave_changed ? 
+        (1-global_mem_def.burst_interleaved) : global_mem_def.burst_interleaved;
+    printf("Burst interleave: %u\n", burst_interleave);
+    if (bank_id > 0 && burst_interleave == 0) {
       // Bank start and end addresses are calculated using the physical_range
       // since banks correspond to the physical layout of the memory.
       *initial_try =
@@ -4595,7 +4602,7 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
 // Try allocating first on target DIMM, then try entire memory range.
 static int acl_allocate_block(acl_block_allocation_t *block_allocation,
                               const cl_mem mem, unsigned physical_device_id,
-                              unsigned target_mem_id) {
+                              unsigned target_mem_id, int interleave_changed) {
   acl_assert_locked();
 
   int result = 0;
@@ -4621,7 +4628,7 @@ static int acl_allocate_block(acl_block_allocation_t *block_allocation,
   void *initial_try = NULL;
 
   l_get_working_range(block_allocation, physical_device_id, target_mem_id,
-                      mem->bank_id, &working_range, &initial_try);
+                      mem->bank_id, &working_range, &initial_try, interleave_changed);
 
 #ifdef MEM_DEBUG_MSG
   printf("acl_allocate_block size:%zx, working_range:%zx - %zx, initial "
@@ -6759,6 +6766,54 @@ void acl_copy_device_buffers_from_host_after_programming(
 
   acl_print_debug_msg(" Explicit write of all device side buffers\n");
 
+  // std::vector<acl_block_allocation_t *> block_ptrs;
+  // block = _context->global_mem->first_block;
+  // while (block != NULL) {
+  //   mem = block->mem_obj;
+  //   printf("copy_back: Check mem[%p]\n", mem);
+  //   if (mem->allocation_deferred || mem->mem_cpy_host_ptr_pending ||
+  //       ACL_GET_PHYSICAL_ID(mem->block_allocation->range.begin) !=
+  //           physical_device_id) {
+  //     // If the memory isn't actually allocated yet OR it's not on the device
+  //     // being reprogrammed then just skip OR we haven't even dont the memory
+  //     // copied to the device yet
+  //     printf("copy_back: Skip mem[%p]\n", mem);
+  //     block = block->next_block_in_region;
+  //     continue;
+  //   }
+  //   if (!mem->writable_copy_on_host) {
+  //     printf("copy_back: Remove mem[%p] from linked list\n", mem);
+  //     acl_block_allocation_t **region_block_ptr = &(block->region->first_block);
+  //     while (*region_block_ptr) {
+  //       if (*region_block_ptr == block) {
+  //         // Remove block from linked list
+  //         *region_block_ptr = block->next_block_in_region;
+  //         // Break loop since the block will appear only once
+  //         break;
+  //       }
+  //       // Advance to next cl_mem in the region
+  //       region_block_ptr = &((*region_block_ptr)->next_block_in_region);
+  //     }
+  //     block->next_block_in_region = NULL;
+  //     block_ptrs.push_back(block);
+  //     block = *region_block_ptr;
+  //   } else {
+  //     block = block->next_block_in_region;
+  //   }
+  // }
+
+  // for (auto &block_ptr: block_ptrs) {
+  //   mem = block_ptr->mem_obj;
+  //   printf("copy_back: mem[%p]\n", mem);
+  //   int result = acl_allocate_block(block_ptr, mem, physical_device_id,
+  //                                   mem->mem_id, 1);
+  //   std::cout << "copy_back: Result: " << result << std::endl;
+  //   if (!mem->reserved_allocations[physical_device_id][mem->mem_id]) {
+  //     printf("no reserved allocation\n");
+  //   }
+  //   mem->reserved_allocations[physical_device_id][mem->mem_id] = block_ptr;
+  // }
+
   for (block = _context->global_mem->first_block; block != NULL;
        block = block->next_block_in_region) {
     mem = block->mem_obj;
@@ -6771,8 +6826,18 @@ void acl_copy_device_buffers_from_host_after_programming(
       // If the memory isn't actually allocated yet OR it's not on the device
       // being reprogrammed then just skip OR we haven't even dont the memory
       // copied to the device yet
+      printf("Burst skipping block %p\n", block);
       continue;
     }
+    if (mem->reserved_allocations[physical_device_id][mem->mem_id] == NULL) {
+      printf("No reserved allocation Burst\n");
+    } else {
+      printf("Burst reserved allocation: %zx - %zx\n",
+          (size_t)mem->reserved_allocations[physical_device_id][mem->mem_id]->range.begin,
+          (size_t)mem->reserved_allocations[physical_device_id][mem->mem_id]->range.next);
+    }
+    printf("Burst reserved allocation count: %d\n",
+        mem->reserved_allocations_count[physical_device_id][mem->mem_id]);
     // Copy back from host only if the "writable" copy is not on the host.
     if (!mem->writable_copy_on_host) {
       cl_context context2 = mem->context;
@@ -6899,6 +6964,7 @@ void acl_copy_device_buffers_from_host_after_programming(
         write_callback(mem, 1);
     }
   }
+  printf("Done acl_copy_device_buffers_from_host_after_programming Burst\n");
 }
 
 static void acl_print_all_mem_in_region(acl_mem_region_t *region);

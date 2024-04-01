@@ -712,6 +712,7 @@ int acl_kernel_if_init(acl_kernel_if *kern, acl_bsp_io bsp_io,
                           config_str.data());
 
   // Returns 1 if success
+  std::cout << "Burst read rom\n";
   std::string auto_config_err_str;
   auto load_result = acl_load_device_def_from_str(
       config_string, sysdef->device[kern->physical_device_id].autodiscovery_def,
@@ -862,6 +863,7 @@ int acl_kernel_if_update(const acl_device_def_autodiscovery_t &devdef,
   for (unsigned ii = 0; ii < devdef.num_global_mem_systems; ii++) {
     if ((unsigned int)devdef.global_mem_defs[ii].config_addr > 0 &&
         (unsigned int)devdef.global_mem_defs[ii].num_global_banks > 1) {
+      printf("Writing Burst interleave %d\n", devdef.global_mem_defs[ii].burst_interleaved);
       ACL_KERNEL_IF_DEBUG_MSG(kern,
                               "Configuring interleaving for memory %d (%s), "
                               "burst_interleaved = %d\n",
