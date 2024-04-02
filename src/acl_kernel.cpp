@@ -314,6 +314,7 @@ CL_API_ENTRY cl_int CL_API_CALL clSetKernelArgIntelFPGA(cl_kernel kernel,
                                                         cl_uint arg_index,
                                                         size_t arg_size,
                                                         const void *arg_value) {
+  std::cout << "clSetKernelArgInstelFPGA Burst\n";
   const acl_kernel_arg_info_t *arg_info = 0;
   cl_context context;
   cl_bool is_pipe = CL_FALSE;

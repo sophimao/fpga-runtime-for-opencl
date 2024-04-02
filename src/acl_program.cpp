@@ -290,6 +290,7 @@ CL_API_ENTRY cl_program CL_API_CALL clCreateProgramWithBinaryIntelFPGA(
     cl_context context, cl_uint num_devices, const cl_device_id *device_list,
     const size_t *lengths, const unsigned char **binaries,
     cl_int *binary_status, cl_int *errcode_ret) {
+  std::cout << "clCreateProgramWithBinaryIntelFPGA Burst\n";
   cl_uint i;
   cl_uint idev;
   cl_program program = 0;
@@ -1596,6 +1597,7 @@ void acl_program_forget_kernel(cl_program program, cl_kernel kernel) {
 // requests right now.
 ACL_EXPORT
 void acl_program_device(void *user_data, acl_device_op_t *op) {
+  std::cout << "Burst acl_program_device\n";
   cl_event event = op->info.event;
   cl_context context = event->command_queue->context;
   int status = 0;
@@ -1642,6 +1644,7 @@ void acl_program_device(void *user_data, acl_device_op_t *op) {
               .burst_interleaved != dev_bin->get_devdef()
                                         .autodiscovery_def.global_mem_defs[i]
                                         .burst_interleaved) {
+        std::cout << "Trying program, Burst interleaved changed\n";
         interleave_changed = 1;
         break;
       }
@@ -2084,6 +2087,7 @@ static void l_try_to_eagerly_program_device(cl_program program) {
 
         if (result == CL_SUCCESS) {
 
+          std::cout << "l_try_to_eagerly_program_device Burst\n";
           reprogram_event->cmd.info.eager_program = &(dev_prog->device_binary);
 
           // Need to retain the program until we've finished this
