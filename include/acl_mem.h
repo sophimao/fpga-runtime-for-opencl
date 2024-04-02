@@ -65,7 +65,10 @@ void acl_resize_reserved_allocations_for_device(cl_mem mem,
                                                 acl_device_def_t &def);
 cl_int acl_reserve_buffer_block(cl_mem mem, acl_mem_region_t *region,
                                 unsigned physical_device_id,
-                                unsigned target_mem_id);
+                                unsigned target_mem_id,
+                                const unsigned *burst_interleaved = NULL);
+int acl_realloc_block(cl_mem mem, const unsigned int physical_device_id,
+                      const unsigned int *burst_interleaved);
 
 int acl_get_default_memory(const acl_device_def_t &dev);
 int acl_get_default_device_global_memory(const acl_device_def_t &dev);

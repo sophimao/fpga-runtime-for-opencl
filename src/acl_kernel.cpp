@@ -2892,9 +2892,12 @@ static cl_int l_copy_and_adjust_arguments_for_device(
 #endif
 
             // Need to reserve
-            if (!acl_reserve_buffer_block(mem_obj,
-                                          &(acl_get_platform()->global_mem),
-                                          needed_physical_id, needed_mem_id)) {
+            if (!acl_reserve_buffer_block(
+                    mem_obj, &(acl_get_platform()->global_mem),
+                    needed_physical_id, needed_mem_id,
+                    &kernel->dev_bin->get_devdef()
+                         .autodiscovery_def.global_mem_defs[needed_mem_id]
+                         .burst_interleaved)) {
               // What happens if this fails and there are other mem objects for
               // this kernel that have reserved allocations? Could result in a
               // memory leak....
@@ -2908,6 +2911,18 @@ static cl_int l_copy_and_adjust_arguments_for_device(
                                                          [needed_mem_id]),
                    (size_t)(mem_obj->block_allocation));
 #endif
+            if (kernel->dev_bin->get_devdef()
+                    .autodiscovery_def.global_mem_defs[needed_mem_id]
+                    .burst_interleaved !=
+                mem_obj->reserved_allocations[needed_physical_id][needed_mem_id]
+                    ->burst_interleaved) {
+              printf("Detected change in Burst interleave setting, realloc\n");
+              acl_realloc_block(
+                  mem_obj, needed_physical_id,
+                  &kernel->dev_bin->get_devdef()
+                       .autodiscovery_def.global_mem_defs[needed_mem_id]
+                       .burst_interleaved);
+            }
           }
         }
         mem_obj
@@ -2917,7 +2932,13 @@ static cl_int l_copy_and_adjust_arguments_for_device(
                mem_obj->reserved_allocations_count[needed_physical_id]
                                                   [needed_mem_id]);
 #endif
-
+        printf("Kernel program Burst interleaved: %u\n",
+               kernel->dev_bin->get_devdef()
+                   .autodiscovery_def.global_mem_defs[needed_mem_id]
+                   .burst_interleaved);
+        printf("Mem block allocation Burst interleaved: %u\n",
+               mem_obj->reserved_allocations[needed_physical_id][needed_mem_id]
+                   ->burst_interleaved);
         // copy the address of the reserved allocation into the invocation
         // image:
         const void *mem_addr =

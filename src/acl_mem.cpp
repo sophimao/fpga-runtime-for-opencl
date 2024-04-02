@@ -86,14 +86,16 @@ acl_forcibly_release_all_memory_for_context_in_region(cl_context context,
                                                       acl_mem_region_t *region);
 static void acl_dump_mem_internal(cl_mem mem);
 
-static void l_get_working_range(const acl_block_allocation_t *block_allocation,
+static void l_get_working_range(acl_block_allocation_t *block_allocation,
                                 unsigned physical_device_id,
                                 unsigned target_mem_id, unsigned bank_id,
                                 acl_addr_range_t *working_range,
-                                void **initial_try);
+                                void **initial_try,
+                                const unsigned *burst_interleaved);
 static int acl_allocate_block(acl_block_allocation_t *block_allocation,
                               const cl_mem mem, unsigned physical_device_id,
-                              unsigned target_mem_id);
+                              unsigned target_mem_id,
+                              const unsigned *burst_interleaved = NULL);
 static int copy_image_metadata(cl_mem mem);
 static void remove_mem_block_linked_list(acl_block_allocation_t *block);
 static cl_bool is_image(cl_mem mem);
@@ -4536,11 +4538,12 @@ CL_API_ENTRY cl_int clEnqueueWriteGlobalVariableINTEL(
 //////////////////////////////
 // Internals
 
-static void l_get_working_range(const acl_block_allocation_t *block_allocation,
+static void l_get_working_range(acl_block_allocation_t *block_allocation,
                                 unsigned physical_device_id,
                                 unsigned target_mem_id, unsigned bank_id,
                                 acl_addr_range_t *working_range,
-                                void **initial_try) {
+                                void **initial_try,
+                                const unsigned *burst_interleaved) {
   acl_assert_locked();
 
   if (block_allocation->region == &(acl_platform.global_mem)) {
@@ -4567,12 +4570,17 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
         ACL_CREATE_DEVICE_ADDRESS(physical_device_id, working_range->next);
     *initial_try = working_range->begin;
 
+    unsigned int cur_interleave = burst_interleaved
+                                      ? *burst_interleaved
+                                      : global_mem_def.burst_interleaved;
+    printf("Current Burst interleave: %u\n", cur_interleave);
+
     // If user requested a certain bank within global_mem, start there
     // instead of working_range.begin. If in acl_allocate_block it doesn't find
     // a free block somewhere between the requested bank and end of memory, it
     // will try again from the beginning of memory. WARNING: Nothing prevents
     // the block from straddling across two banks
-    if (bank_id > 0) {
+    if (bank_id > 0 && cur_interleave == 0) {
       // Bank start and end addresses are calculated using the physical_range
       // since banks correspond to the physical layout of the memory.
       *initial_try =
@@ -4585,6 +4593,7 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
         *initial_try = working_range->begin;
       }
     }
+    block_allocation->burst_interleaved = cur_interleave;
   } else {
     *working_range = block_allocation->region->range;
     *initial_try = working_range->begin;
@@ -4595,7 +4604,8 @@ static void l_get_working_range(const acl_block_allocation_t *block_allocation,
 // Try allocating first on target DIMM, then try entire memory range.
 static int acl_allocate_block(acl_block_allocation_t *block_allocation,
                               const cl_mem mem, unsigned physical_device_id,
-                              unsigned target_mem_id) {
+                              unsigned target_mem_id,
+                              const unsigned *burst_interleaved) {
   acl_assert_locked();
 
   int result = 0;
@@ -4621,7 +4631,8 @@ static int acl_allocate_block(acl_block_allocation_t *block_allocation,
   void *initial_try = NULL;
 
   l_get_working_range(block_allocation, physical_device_id, target_mem_id,
-                      mem->bank_id, &working_range, &initial_try);
+                      mem->bank_id, &working_range, &initial_try,
+                      burst_interleaved);
 
 #ifdef MEM_DEBUG_MSG
   printf("acl_allocate_block size:%zx, working_range:%zx - %zx, initial "
@@ -4721,7 +4732,8 @@ void acl_resize_reserved_allocations_for_device(cl_mem mem,
 
 cl_int acl_reserve_buffer_block(cl_mem mem, acl_mem_region_t *region,
                                 unsigned physical_device_id,
-                                unsigned target_mem_id) {
+                                unsigned target_mem_id,
+                                const unsigned *burst_interleaved) {
   acl_assert_locked();
 
 #ifdef MEM_DEBUG_MSG
@@ -4743,7 +4755,7 @@ cl_int acl_reserve_buffer_block(cl_mem mem, acl_mem_region_t *region,
          0);
 
   int result = acl_allocate_block(block_allocation, mem, physical_device_id,
-                                  target_mem_id);
+                                  target_mem_id, burst_interleaved);
 
   // For images, copy the additional meta data (width, height, etc) after
   // allocating
@@ -4767,6 +4779,80 @@ cl_int acl_reserve_buffer_block(cl_mem mem, acl_mem_region_t *region,
          (size_t)(block_allocation->range.next));
 #endif
   return result;
+}
+
+int acl_realloc_block(cl_mem mem, const unsigned int physical_device_id,
+                      const unsigned int *burst_interleaved) {
+  // Only reallocate and migrate if mem resides in global memory
+  if (mem->block_allocation->region != &(acl_platform.global_mem)) {
+    return 1;
+  }
+
+  // Save old address
+  int mem_on_host;
+  void *const old_mem_address = l_get_address_of_writable_copy(
+      mem, physical_device_id, &mem_on_host, CL_FALSE);
+
+  // The mem copy is only needed if the buffer is bound to the device
+  // before global memory range is confirmed (i.e., before reprogram), and
+  // assumed address range before reprogram is different from actual
+  // Therefore, check if:
+  //   1. allocation is deferred (if so auto migration will happen)
+  //   2. buffer is on host
+  //   3. buffer appears to be "at the destination"
+  //   4. block allocation is outside the global memory range
+  if (!mem->allocation_deferred &&
+      !(mem->mem_cpy_host_ptr_pending || mem_on_host) &&
+      (mem->block_allocation ==
+       mem->reserved_allocations[physical_device_id][mem->mem_id])) {
+
+    // Okay to set this to NULL, memory tracked in mem->block_allocation
+    mem->reserved_allocations[physical_device_id][mem->mem_id] = NULL;
+
+    // We will reallocate block, so remove it from linked list first
+    acl_block_allocation_t **block_ptr =
+        &(mem->block_allocation->region->first_block);
+    // try to find the mem->block_allocation in the linked list, error if
+    // the block is not found before reaching the end of list
+    while (true) {
+      acl_block_allocation_t *const block = *block_ptr;
+      assert(block != NULL);
+      if (block == mem->block_allocation) {
+        *block_ptr = block->next_block_in_region;
+        break;
+      }
+      // Advance to the next block in the region
+      block_ptr = &(block->next_block_in_region);
+    }
+
+    // Reallocate buffer range
+    int result =
+        acl_allocate_block(mem->block_allocation, mem, physical_device_id,
+                           mem->mem_id, burst_interleaved);
+    if (!result) {
+      printf("acl_allocate_block failed!!!!\n");
+      return 0;
+    }
+    mem->reserved_allocations[physical_device_id][mem->mem_id] =
+        mem->block_allocation;
+    void *const new_mem_address =
+        mem->reserved_allocations[physical_device_id][mem->mem_id]->range.begin;
+
+#ifdef MEM_DEBUG_MSG
+    printf("reallocating mem obj due to change in burst interleave setting, "
+           "device %u ([0]%zx -> [0]%zx) ",
+           physical_device_id, (size_t)(ACL_STRIP_PHYSICAL_ID(old_mem_address)),
+           (size_t)(ACL_STRIP_PHYSICAL_ID(new_mem_address)));
+#endif
+
+    // do blocking copy, this is for simulation only so performance is
+    // probably not a huge concern
+    const acl_hal_t *const hal = acl_get_hal();
+    hal->copy_globalmem_to_globalmem(0, old_mem_address, new_mem_address,
+                                     mem->size);
+    mem->block_allocation->burst_interleaved = *burst_interleaved;
+  }
+  return 1;
 }
 
 static int copy_image_metadata(cl_mem mem) {

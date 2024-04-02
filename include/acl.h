@@ -457,6 +457,7 @@ struct _cl_mem;
 struct acl_block_allocation_t {
   acl_addr_range_t range;
   acl_mem_region_t *region;
+  unsigned int burst_interleaved;
   acl_block_allocation_t *next_block_in_region;
   struct _cl_mem *mem_obj; // back pointer to cl_mem object
 };
