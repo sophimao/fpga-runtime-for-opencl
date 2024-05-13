@@ -1435,11 +1435,11 @@ static void acl_kernel_if_update_status_query(acl_kernel_if *kern,
     // Only expect single completion for older csr version
     finish_counter = 1;
   } else {
-    printf("[tid:%d] Readind accel %u finish counter @ 0x30\n", get_tid(), accel_id);
+    printf("[tid:%d] Reading accel %u finish counter @ 0x30\n", get_tid(), accel_id);
     acl_kernel_cra_read(kern, accel_id,
                         KERNEL_OFFSET_FINISH_COUNTER + kern->cra_address_offset,
                         &finish_counter);
-    printf("[tid:%d] Done readind accel %u finish counter!!!\n", get_tid(), accel_id);
+    printf("[tid:%d] Done reading accel %u finish counter!!!\n", get_tid(), accel_id);
     ACL_KERNEL_IF_DEBUG_MSG(kern, ":: Accelerator %d has %d finishes.\n",
                             accel_id, finish_counter);
   }
