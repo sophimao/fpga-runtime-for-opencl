@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <unistd.h>
+#include <sys/syscall.h>
 
 // Internal headers.
 #include <acl_auto_configure.h>
@@ -60,6 +62,14 @@ acl_process_autorun_profiler_scan_chain(unsigned int physical_device_id,
 //#define POLLING_PERIOD (10000) // polling period in ns
 
 typedef time_ns time_us;
+
+inline int get_tid(void) {
+#if defined(WINDOWS)
+  return GetCurrentThreadId();
+#else
+  return syscall(__NR_gettid);
+#endif
+}
 
 // Function declarations
 static int acl_kernel_if_read_32b(acl_kernel_if *kern, unsigned int addr,
@@ -368,13 +378,19 @@ static uintptr_t acl_kernel_cra_set_segment(acl_kernel_if *kern,
                                             unsigned int addr) {
   uintptr_t logical_addr =
       kern->accel_csr[accel_id].address + addr - OFFSET_KERNEL_CRA;
+  printf("[tid:%d] acl_kernel_cra_set_segment:\n", get_tid());
+  printf("\tinput addr=0x%x\n", addr);
+  printf("\tkernel accel [%u] csr absolute addr=0x%zx\n", accel_id, kern->accel_csr[accel_id].address - OFFSET_KERNEL_CRA);
+  printf("\tcalculated logical addr=0x%zx\n", logical_addr);
   uintptr_t segment = logical_addr & ((size_t)0 - (KERNEL_CRA_SEGMENT_SIZE));
   uintptr_t segment_offset = logical_addr % KERNEL_CRA_SEGMENT_SIZE;
+  printf("\tsegment=0x%zx, segment_offset=0x%zx\n", segment, segment_offset);
   acl_assert_locked_or_sig();
 
   // The kernel cra master is hardcoded to 30 addr bits, so we can use 32-bit
   // interface here.
   if (kern->cur_segment != segment) {
+    printf("Write segment 1: segment=0x%zx\n", segment);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment);
     kern->cur_segment = segment;
@@ -390,6 +406,7 @@ static uintptr_t acl_kernel_cra_set_segment_rom(acl_kernel_if *kern,
   uintptr_t segment_offset = addr % KERNEL_CRA_SEGMENT_SIZE;
 
   if (kern->cur_segment != segment) {
+    printf("Write segment 2: segment=%zu\n", segment);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment);
     kern->cur_segment = segment;
@@ -1269,7 +1286,9 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
     ACL_KERNEL_SET_BIT(new_csr, KERNEL_CSR_START);
     acl_kernel_cra_write(kern, accel_id, KERNEL_OFFSET_CSR, new_csr);
   } else {
+    printf("[tid:%d] Writing accel %u start register @ 0x08\n", get_tid(), accel_id);
     acl_kernel_cra_write(kern, accel_id, KERNEL_OFFSET_START_REG, 1);
+    printf("[tid:%d] Done writing accel %u start register!!!\n", get_tid(), accel_id);
   }
   // IRQ handler takes care of the completion event through
   // acl_kernel_if_update_status()
@@ -1416,9 +1435,11 @@ static void acl_kernel_if_update_status_query(acl_kernel_if *kern,
     // Only expect single completion for older csr version
     finish_counter = 1;
   } else {
+    printf("[tid:%d] Readind accel %u finish counter @ 0x30\n", get_tid(), accel_id);
     acl_kernel_cra_read(kern, accel_id,
                         KERNEL_OFFSET_FINISH_COUNTER + kern->cra_address_offset,
                         &finish_counter);
+    printf("[tid:%d] Done readind accel %u finish counter!!!\n", get_tid(), accel_id);
     ACL_KERNEL_IF_DEBUG_MSG(kern, ":: Accelerator %d has %d finishes.\n",
                             accel_id, finish_counter);
   }
@@ -1556,6 +1577,7 @@ void acl_kernel_if_update_status(acl_kernel_if *kern) {
   // Restore value of kernel cra address span extender segment to that of prior
   // to IRQ
   if (kern->cur_segment != segment_pre_irq) {
+    printf("Write segment 3: %zu\n", segment_pre_irq);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment_pre_irq);
     kern->cur_segment = segment_pre_irq;
