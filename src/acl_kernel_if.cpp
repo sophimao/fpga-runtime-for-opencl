@@ -406,7 +406,7 @@ static uintptr_t acl_kernel_cra_set_segment_rom(acl_kernel_if *kern,
   uintptr_t segment_offset = addr % KERNEL_CRA_SEGMENT_SIZE;
 
   if (kern->cur_segment != segment) {
-    printf("Write segment 2: segment=%zu\n", segment);
+    printf("Write segment 2: segment=0x%zx\n", segment);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment);
     kern->cur_segment = segment;
@@ -1439,7 +1439,8 @@ static void acl_kernel_if_update_status_query(acl_kernel_if *kern,
     acl_kernel_cra_read(kern, accel_id,
                         KERNEL_OFFSET_FINISH_COUNTER + kern->cra_address_offset,
                         &finish_counter);
-    printf("[tid:%d] Done reading accel %u finish counter!!!\n", get_tid(), accel_id);
+    printf("[tid:%d] Done reading accel %u finish counter (%d finishes)!!!\n",
+        get_tid(), accel_id, finish_counter);
     ACL_KERNEL_IF_DEBUG_MSG(kern, ":: Accelerator %d has %d finishes.\n",
                             accel_id, finish_counter);
   }
