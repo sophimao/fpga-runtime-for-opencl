@@ -71,6 +71,8 @@ inline int get_tid(void) {
 #endif
 }
 
+acl_mutex_t segment_lock;
+
 // Function declarations
 static int acl_kernel_if_read_32b(acl_kernel_if *kern, unsigned int addr,
                                   unsigned int *val);
@@ -378,22 +380,24 @@ static uintptr_t acl_kernel_cra_set_segment(acl_kernel_if *kern,
                                             unsigned int addr) {
   uintptr_t logical_addr =
       kern->accel_csr[accel_id].address + addr - OFFSET_KERNEL_CRA;
-  printf("[tid:%d] acl_kernel_cra_set_segment:\n", get_tid());
-  printf("\tinput addr=0x%x\n", addr);
-  printf("\tkernel accel [%u] csr absolute addr=0x%zx\n", accel_id, kern->accel_csr[accel_id].address - OFFSET_KERNEL_CRA);
-  printf("\tcalculated logical addr=0x%zx\n", logical_addr);
+  // printf("[tid:%d] acl_kernel_cra_set_segment:\n", get_tid());
+  // printf("\tinput addr=0x%x; accel [%u] csr absolute addr=0x%zx\n", 
+  //     addr, accel_id, kern->accel_csr[accel_id].address - OFFSET_KERNEL_CRA);
+  // printf("\tcalculated logical addr=0x%zx\n", logical_addr);
   uintptr_t segment = logical_addr & ((size_t)0 - (KERNEL_CRA_SEGMENT_SIZE));
   uintptr_t segment_offset = logical_addr % KERNEL_CRA_SEGMENT_SIZE;
-  printf("\tsegment=0x%zx, segment_offset=0x%zx\n", segment, segment_offset);
+  // printf("\tsegment=0x%zx, segment_offset=0x%zx\n", segment, segment_offset);
   acl_assert_locked_or_sig();
 
   // The kernel cra master is hardcoded to 30 addr bits, so we can use 32-bit
   // interface here.
   if (kern->cur_segment != segment) {
-    printf("Write segment 1: segment=0x%zx\n", segment);
+    printf("[tid:%d] Write segment 1: 0x%zx\n", get_tid(), segment);
+    // printf("\tWrite segment 1: segment=0x%zx\n", segment);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment);
     kern->cur_segment = segment;
+    // printf("\tcur_segment 1: 0x%zx\n", kern->cur_segment);
   }
 
   return segment_offset;
@@ -406,7 +410,6 @@ static uintptr_t acl_kernel_cra_set_segment_rom(acl_kernel_if *kern,
   uintptr_t segment_offset = addr % KERNEL_CRA_SEGMENT_SIZE;
 
   if (kern->cur_segment != segment) {
-    printf("Write segment 2: segment=0x%zx\n", segment);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment);
     kern->cur_segment = segment;
@@ -416,21 +419,39 @@ static uintptr_t acl_kernel_cra_set_segment_rom(acl_kernel_if *kern,
 }
 
 static int acl_kernel_cra_read(acl_kernel_if *kern, unsigned int accel_id,
-                               unsigned int addr, unsigned int *val) {
+                               unsigned int addr, unsigned int *val, bool verbose=false) {
   assert(kern->cra_ring_root_exist);
+  // printf("[tid:%d] Grabbing segment lock...\n", get_tid());
+  acl_mutex_lock(&segment_lock);
+  // printf("[tid:%d] Grabbed segment lock\n", get_tid());
   uintptr_t segment_offset = acl_kernel_cra_set_segment(kern, accel_id, addr);
   acl_assert_locked_or_sig();
-  return acl_kernel_if_read_32b(
+  int result = acl_kernel_if_read_32b(
       kern, (unsigned)OFFSET_KERNEL_CRA + (unsigned)segment_offset, val);
+  // printf("[tid:%d] Releasing segment lock...\n", get_tid());
+  if (verbose) {
+    printf("[tid:%d] Done reading accel %u finish counter (%d finishes)!!!\n",
+        get_tid(), accel_id, *val);
+  }
+  acl_mutex_unlock(&segment_lock);
+  // printf("[tid:%d] Released segment lock\n", get_tid());
+  return result;
 }
 
 int acl_kernel_cra_read_64b(acl_kernel_if *kern, unsigned int accel_id,
                             unsigned int addr, uint64_t *val) {
   assert(kern->cra_ring_root_exist);
+  // printf("[tid:%d] Grabbing segment lock...\n", get_tid());
+  acl_mutex_lock(&segment_lock);
+  // printf("[tid:%d] Grabbed segment lock\n", get_tid());
   uintptr_t segment_offset = acl_kernel_cra_set_segment(kern, accel_id, addr);
   acl_assert_locked_or_sig();
-  return acl_kernel_if_read_64b(
+  int result = acl_kernel_if_read_64b(
       kern, (unsigned)OFFSET_KERNEL_CRA + (unsigned)segment_offset, val);
+  // printf("[tid:%d] Releasing segment lock...\n", get_tid());
+  acl_mutex_unlock(&segment_lock);
+  // printf("[tid:%d] Released segment lock\n", get_tid());
+  return result;
 }
 
 // Read 32b from kernel ROM
@@ -477,21 +498,38 @@ static int acl_kernel_rom_cra_read_block(acl_kernel_if *kern, unsigned int addr,
 }
 
 static int acl_kernel_cra_write(acl_kernel_if *kern, unsigned int accel_id,
-                                unsigned int addr, unsigned int val) {
+                                unsigned int addr, unsigned int val, bool verbose=false) {
   assert(kern->cra_ring_root_exist);
+  // printf("[tid:%d] Grabbing segment lock...\n", get_tid());
+  acl_mutex_lock(&segment_lock);
+  // printf("[tid:%d] Grabbed segment lock\n", get_tid());
   uintptr_t segment_offset = acl_kernel_cra_set_segment(kern, accel_id, addr);
   acl_assert_locked_or_sig();
-  return acl_kernel_if_write_32b(
+  int result = acl_kernel_if_write_32b(
       kern, (unsigned)OFFSET_KERNEL_CRA + (unsigned)segment_offset, val);
+  // printf("[tid:%d] Releasing segment lock...\n", get_tid());
+  if (verbose) {
+    printf("[tid:%d] Done writing accel %u start register!!!\n", get_tid(), accel_id);
+  }
+  acl_mutex_unlock(&segment_lock);
+  // printf("[tid:%d] Released segment lock\n", get_tid());
+  return result;
 }
 
 static int acl_kernel_cra_write_64b(acl_kernel_if *kern, unsigned int accel_id,
                                     unsigned int addr, uint64_t val) {
   assert(kern->cra_ring_root_exist);
+  // printf("[tid:%d] Grabbing segment lock...\n", get_tid());
+  acl_mutex_lock(&segment_lock);
+  // printf("[tid:%d] Grabbed segment lock\n", get_tid());
   uintptr_t segment_offset = acl_kernel_cra_set_segment(kern, accel_id, addr);
   acl_assert_locked();
-  return acl_kernel_if_write_64b(
+  int result = acl_kernel_if_write_64b(
       kern, (unsigned)OFFSET_KERNEL_CRA + (unsigned)segment_offset, val);
+  // printf("[tid:%d] Releasing segment lock...\n", get_tid());
+  acl_mutex_unlock(&segment_lock);
+  // printf("[tid:%d] Released segment lock\n", get_tid());
+  return result;
 }
 
 static int acl_kernel_cra_write_block(acl_kernel_if *kern,
@@ -799,6 +837,7 @@ int acl_kernel_if_update(const acl_device_def_autodiscovery_t &devdef,
   }
 
   acl_kernel_if_close(kern);
+  acl_mutex_init(&segment_lock, nullptr);
 
   // Initialize whether the cra_ring_root exist in the design
   kern->cra_ring_root_exist = devdef.cra_ring_root_exist;
@@ -1286,9 +1325,9 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
     ACL_KERNEL_SET_BIT(new_csr, KERNEL_CSR_START);
     acl_kernel_cra_write(kern, accel_id, KERNEL_OFFSET_CSR, new_csr);
   } else {
-    printf("[tid:%d] Writing accel %u start register @ 0x08\n", get_tid(), accel_id);
-    acl_kernel_cra_write(kern, accel_id, KERNEL_OFFSET_START_REG, 1);
-    printf("[tid:%d] Done writing accel %u start register!!!\n", get_tid(), accel_id);
+    // printf("[tid:%d] Writing accel %u start register @ 0x08\n", get_tid(), accel_id);
+    acl_kernel_cra_write(kern, accel_id, KERNEL_OFFSET_START_REG, 1, true);
+    // printf("[tid:%d] Done writing accel %u start register!!!\n", get_tid(), accel_id);
   }
   // IRQ handler takes care of the completion event through
   // acl_kernel_if_update_status()
@@ -1335,6 +1374,7 @@ static void acl_kernel_if_update_status_query(acl_kernel_if *kern,
 
   // Check for updated status bits
   if (0 == (csr & KERNEL_CSR_STATUS_BITS_MASK)) {
+    printf("[tid:%d] accel %u running and has no update!!\n", get_tid(), accel_id);
     return;
   }
 
@@ -1435,12 +1475,12 @@ static void acl_kernel_if_update_status_query(acl_kernel_if *kern,
     // Only expect single completion for older csr version
     finish_counter = 1;
   } else {
-    printf("[tid:%d] Reading accel %u finish counter @ 0x30\n", get_tid(), accel_id);
+    // printf("[tid:%d] Reading accel %u finish counter @ 0x30\n", get_tid(), accel_id);
     acl_kernel_cra_read(kern, accel_id,
                         KERNEL_OFFSET_FINISH_COUNTER + kern->cra_address_offset,
-                        &finish_counter);
-    printf("[tid:%d] Done reading accel %u finish counter (%d finishes)!!!\n",
-        get_tid(), accel_id, finish_counter);
+                        &finish_counter, true);
+    // printf("[tid:%d] Done reading accel %u finish counter (%d finishes)!!!\n",
+    //     get_tid(), accel_id, finish_counter);
     ACL_KERNEL_IF_DEBUG_MSG(kern, ":: Accelerator %d has %d finishes.\n",
                             accel_id, finish_counter);
   }
@@ -1500,7 +1540,9 @@ void acl_kernel_if_update_status(acl_kernel_if *kern) {
 
   // Zero upper 32-bits on 64-bit machines
   kern->cur_segment = segment & 0xffffffff;
+  // printf("[tid:%d] cur_segment 2: 0x%zx\n", get_tid(), kern->cur_segment);
   uintptr_t segment_pre_irq = kern->cur_segment;
+  printf("[tid:%d] Read pre-IRQ segment: 0x%zx\n", get_tid(), segment_pre_irq);
 
   // Check which accelerators are done and update their status appropriately
   for (unsigned int accel_id = 0; accel_id < kern->num_accel; ++accel_id) {
@@ -1578,10 +1620,11 @@ void acl_kernel_if_update_status(acl_kernel_if *kern) {
   // Restore value of kernel cra address span extender segment to that of prior
   // to IRQ
   if (kern->cur_segment != segment_pre_irq) {
-    printf("Write segment 3: %zu\n", segment_pre_irq);
+    printf("[tid:%d] Write segment 3: 0x%zx\n", get_tid(), segment_pre_irq);
     acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
                             (unsigned int)segment_pre_irq);
     kern->cur_segment = segment_pre_irq;
+    // printf("\tcur_segment 3: 0x%zx\n", kern->cur_segment);
   }
 }
 
@@ -1752,6 +1795,7 @@ void acl_kernel_if_unstall_kernel(acl_kernel_if *kern, int activation_id) {
 
 void acl_kernel_if_close(acl_kernel_if *kern) {
   acl_assert_locked();
+  acl_mutex_destroy(&segment_lock);
   kern->accel_csr.clear();
   kern->accel_perf_mon.clear();
   kern->accel_num_printfs.clear();
