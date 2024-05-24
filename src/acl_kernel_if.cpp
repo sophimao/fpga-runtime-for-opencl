@@ -536,6 +536,9 @@ static int acl_kernel_cra_write_block(acl_kernel_if *kern,
                                       unsigned int accel_id, unsigned int addr,
                                       unsigned int *val, size_t size) {
   assert(kern->cra_ring_root_exist);
+  // printf("[tid:%d] Grabbing segment lock...\n", get_tid());
+  acl_mutex_lock(&segment_lock);
+  // printf("[tid:%d] Grabbed segment lock\n", get_tid());
   uintptr_t segment_offset = acl_kernel_cra_set_segment(kern, accel_id, addr);
   uintptr_t logical_addr =
       kern->accel_csr[accel_id].address + addr - OFFSET_KERNEL_CRA;
@@ -569,8 +572,12 @@ static int acl_kernel_cra_write_block(acl_kernel_if *kern,
     }
   }
 
-  return acl_kernel_if_write_block(
+  int result = acl_kernel_if_write_block(
       kern, (unsigned)OFFSET_KERNEL_CRA + (unsigned)segment_offset, val, size);
+  // printf("[tid:%d] Releasing segment lock...\n", get_tid());
+  acl_mutex_unlock(&segment_lock);
+  // printf("[tid:%d] Released segment lock\n", get_tid());
+  return result;
 }
 
 // Private utility function to issue a command to the profile hardware
@@ -1535,14 +1542,14 @@ void acl_kernel_if_update_status(acl_kernel_if *kern) {
   // Get the state of kernel_cra address span extender segment prior to IRQ in
   // hardware If IRQ is received in middle of segment change, segment value in
   // cache and hardware could go out of sync
-  unsigned int segment;
-  acl_kernel_if_read_32b(kern, OFFSET_KERNEL_CRA_SEGMENT, &segment);
+  // unsigned int segment;
+  // acl_kernel_if_read_32b(kern, OFFSET_KERNEL_CRA_SEGMENT, &segment);
 
-  // Zero upper 32-bits on 64-bit machines
-  kern->cur_segment = segment & 0xffffffff;
-  // printf("[tid:%d] cur_segment 2: 0x%zx\n", get_tid(), kern->cur_segment);
-  uintptr_t segment_pre_irq = kern->cur_segment;
-  printf("[tid:%d] Read pre-IRQ segment: 0x%zx\n", get_tid(), segment_pre_irq);
+  // // Zero upper 32-bits on 64-bit machines
+  // kern->cur_segment = segment & 0xffffffff;
+  // // printf("[tid:%d] cur_segment 2: 0x%zx\n", get_tid(), kern->cur_segment);
+  // uintptr_t segment_pre_irq = kern->cur_segment;
+  // printf("[tid:%d] Read pre-IRQ segment: 0x%zx\n", get_tid(), segment_pre_irq);
 
   // Check which accelerators are done and update their status appropriately
   for (unsigned int accel_id = 0; accel_id < kern->num_accel; ++accel_id) {
@@ -1619,13 +1626,13 @@ void acl_kernel_if_update_status(acl_kernel_if *kern) {
 
   // Restore value of kernel cra address span extender segment to that of prior
   // to IRQ
-  if (kern->cur_segment != segment_pre_irq) {
-    printf("[tid:%d] Write segment 3: 0x%zx\n", get_tid(), segment_pre_irq);
-    acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
-                            (unsigned int)segment_pre_irq);
-    kern->cur_segment = segment_pre_irq;
-    // printf("\tcur_segment 3: 0x%zx\n", kern->cur_segment);
-  }
+  // if (kern->cur_segment != segment_pre_irq) {
+  //   printf("[tid:%d] Write segment 3: 0x%zx\n", get_tid(), segment_pre_irq);
+  //   acl_kernel_if_write_32b(kern, OFFSET_KERNEL_CRA_SEGMENT,
+  //                           (unsigned int)segment_pre_irq);
+  //   kern->cur_segment = segment_pre_irq;
+  //   // printf("\tcur_segment 3: 0x%zx\n", kern->cur_segment);
+  // }
 }
 
 void acl_kernel_if_debug_dump_printf(acl_kernel_if *kern, unsigned k) {
