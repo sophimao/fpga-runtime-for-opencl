@@ -26,8 +26,8 @@ permissions:
 
 on:
   push:
-    # branches:
-    #   - main
+    branches:
+      - main
     paths:
       - '.github/workflows/container.yml'
       - 'container/rockylinux-8-dev/**'
@@ -100,29 +100,20 @@ jobs:
 
       # Override uid of default user in container to align with GitHub-hosted runners
       # https://github.com/actions/checkout/issues/47
-      # - name: build image
-      #   run: docker build --build-arg uid=1001 -t "$image:$tag" -f container/${{ matrix.container }}/Dockerfile .
-      #   env:
-      #     tag: ${{ steps.tag.outputs.tag }}
-
-      - name: debug
-        run: |
-          echo "user: $user"
-          echo "image: $image"
-          echo "tag: $tag"
+      - name: build image
+        run: docker build --build-arg uid=1001 -t "$image:$tag" -f container/${{ matrix.container }}/Dockerfile .
         env:
-          user: ${{ github.repository_owner }}
           tag: ${{ steps.tag.outputs.tag }}
 
-      # - name: login to registry
-      #   if: github.event_name == 'push'
-      #   run: echo "$token" | docker login ghcr.io -u "$user" --password-stdin
-      #   env:
-      #     user: ${{ github.repository_owner }}
-      #     token: ${{ secrets.GITHUB_TOKEN }}
+      - name: login to registry
+        if: github.event_name == 'push'
+        run: echo "$token" | docker login ghcr.io -u "$user" --password-stdin
+        env:
+          user: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: push image to registry
-      #   if: github.event_name == 'push'
-      #   run: docker image push "$image:$tag"
-      #   env:
-      #     tag: ${{ steps.tag.outputs.tag }}
+      - name: push image to registry
+        if: github.event_name == 'push'
+        run: docker image push "$image:$tag"
+        env:
+          tag: ${{ steps.tag.outputs.tag }}
