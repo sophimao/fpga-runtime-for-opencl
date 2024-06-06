@@ -1,0 +1,93 @@
+# Copyright (C) 2021 Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
+
+# https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions
+
+name: build on Windows
+
+# https://github.blog/changelog/2021-04-20-github-actions-control-permissions-for-github_token/
+permissions:
+  # Grant read permissions to repository in case it is not a forked public
+  # repository, but a private repository that was created manually.
+  contents: read
+
+on:
+  push:
+    paths:
+      - '**'
+      - '!**.md'
+      - '!**/.clang-format'
+      - '!**/COPYING'
+      - '!**/LICENSE'
+      - '!.github/**'
+      - '.github/workflows/tester.yml'
+      - '!.gitignore'
+      - '!cmake/manifests/**'
+      - 'cmake/manifests/windows/**'
+      - '!container/**'
+      - '!docs/**'
+      - '!scripts/**'
+      - 'scripts/install_*.ps1'
+
+  pull_request:
+    paths:
+      - '**'
+      - '!**.md'
+      - '!**/.clang-format'
+      - '!**/COPYING'
+      - '!**/LICENSE'
+      - '!.github/**'
+      - '.github/workflows/tester.yml'
+      - '!.gitignore'
+      - '!cmake/manifests/**'
+      - 'cmake/manifests/windows/**'
+      - '!container/**'
+      - '!docs/**'
+      - '!scripts/**'
+      - 'scripts/install_*.ps1'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.image }}
+
+    strategy:
+      matrix:
+        image:
+          - windows-2019
+          - windows-2022
+
+        # config:
+        #   - Debug
+        #   - Release
+
+    continue-on-error: true
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+
+      - name: query msvc version
+        id: msvc
+        run: |
+          cl
+
+      # - name: query path of compiler setup script
+      #   id: msvc
+      #   run: |
+      #     $installationPath = & vswhere -latest -property installationPath
+      #     "path=$installationPath\vc\auxiliary\build\vcvars64.bat" >> $env:GITHUB_OUTPUT
+
+      # - name: create build files
+      #   shell: cmd
+      #   run: |
+      #     call "${{ steps.msvc.outputs.path }}"
+      #     cd build
+      #     cmake -G Ninja .. -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DCMAKE_INSTALL_PREFIX=c:\fpga-runtime-for-opencl -DCMAKE_PREFIX_PATH=c:\libelf;c:\zlib
+
+      # - name: build runtime
+      #   shell: cmd
+      #   run: |
+      #     call "${{ steps.msvc.outputs.path }}"
+      #     cd build
+      #     ninja -v -k0
+
