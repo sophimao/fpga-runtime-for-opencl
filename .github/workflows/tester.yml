@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     container:
-      image: ghcr.io/sophimao/fpga-runtime-for-opencl/${{ matrix.image }}:main
+      image: ghcr.io/sophimao/fpga-runtime-for-opencl/${{ matrix.image }}:pull-1-merge
 
     strategy:
       matrix:
