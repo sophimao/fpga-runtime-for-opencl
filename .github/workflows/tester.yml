@@ -53,8 +53,12 @@ jobs:
     strategy:
       matrix:
         image:
-          - windows-2019
-          - windows-2022
+          - rockylinux-8-dev
+          - rockylinux-9-dev
+          - opensuse-leap-15-dev
+          - ubuntu-18.04-dev
+          - ubuntu-20.04-dev
+          - ubuntu-22.04-dev
 
         # config:
         #   - Debug
