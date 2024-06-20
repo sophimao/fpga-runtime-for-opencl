@@ -37,6 +37,7 @@ on:
       - 'container/ubuntu-18.04-dev/**'
       - 'container/ubuntu-20.04-dev/**'
       - 'container/ubuntu-22.04-dev/**'
+      - 'container/ubuntu-24.04-dev/**'
       - 'scripts/install_aocl.sh'
 
   pull_request:
@@ -49,6 +50,7 @@ on:
       - 'container/ubuntu-18.04-dev/**'
       - 'container/ubuntu-20.04-dev/**'
       - 'container/ubuntu-22.04-dev/**'
+      - 'container/ubuntu-24.04-dev/**'
       - 'scripts/install_aocl.sh'
 
   workflow_dispatch:
@@ -75,6 +77,7 @@ jobs:
           - ubuntu-18.04-dev
           - ubuntu-20.04-dev
           - ubuntu-22.04-dev
+          - ubuntu-24.04-dev
 
     env:
       image: ghcr.io/${{ github.repository }}/${{ matrix.container }}
