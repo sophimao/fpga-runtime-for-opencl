@@ -1175,10 +1175,8 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
   if (!kern->streaming_control_signal_names[accel_id]) {
     if (kern->csr_version == CSR_VERSION_ID_18_1) {
       // Just write everything for older CSR version
-      if ((kern->io.debug_verbosity) >= 2) {
-        print_invocation_image(kern, (char *)image_p, image_size_static,
-                               image_size_static, offset, true);
-      }
+      print_invocation_image(kern, (char *)image_p, image_size_static,
+                             image_size_static, offset, true);
       acl_kernel_cra_write_block(kern, accel_id, offset,
                                  (unsigned int *)image_p, image_size_static);
     } else {
@@ -1187,14 +1185,12 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
       if (memcmp(img_cache_ptr, (char *)image_p, image_size_static) != 0) {
         // Something changed in static part of the invocation image,
         // write everything to csr
-        if ((kern->io.debug_verbosity) >= 2) {
-          print_invocation_image(kern, (char *)image_p, image_size_static,
-                                 image_size_static, offset, true);
-        }
+        print_invocation_image(kern, (char *)image_p, image_size_static,
+                               image_size_static, offset, true);
         acl_kernel_cra_write_block(kern, accel_id, offset,
                                    (unsigned int *)image_p, image_size_static);
         memcpy(img_cache_ptr, (char *)image_p, image_size_static);
-      } else if ((kern->io.debug_verbosity) >= 2) {
+      } else {
         // Nothing's changed, just print the static part of the invocation image
         print_invocation_image(kern, (char *)image_p, image_size_static,
                                image_size_static, offset, true, false);
@@ -1208,12 +1204,9 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
     accel_has_agent_args = true;
     if (!kern->accel_arg_cache[accel_id]) {
       // The first time invoking the kernel, just write all the arguments
-      if ((kern->io.debug_verbosity) >= 2) {
-        print_invocation_image(kern, image->arg_value, image->arg_value_size,
-                               image->arg_value_size,
-                               (unsigned int)(offset + image_size_static),
-                               false);
-      }
+      print_invocation_image(kern, image->arg_value, image->arg_value_size,
+                             image->arg_value_size,
+                             (unsigned int)(offset + image_size_static), false);
       acl_kernel_cra_write_block(
           kern, accel_id, offset + (unsigned int)image_size_static,
           (unsigned int *)image->arg_value, image->arg_value_size);
@@ -1245,19 +1238,15 @@ void acl_kernel_if_launch_kernel_on_custom_sof(
           size_t size_to_skip = (image->arg_value_size - step > sizeof(int))
                                     ? sizeof(int)
                                     : (image->arg_value_size - step);
-          if ((kern->io.debug_verbosity) >= 2) {
-            print_invocation_image(
-                kern, image->arg_value, image->arg_value_size, size_to_skip,
-                (unsigned int)(offset + image_size_static), false, false, step);
-          }
+          print_invocation_image(
+              kern, image->arg_value, image->arg_value_size, size_to_skip,
+              (unsigned int)(offset + image_size_static), false, false, step);
           step += size_to_skip;
         } else {
           // Write the changed argument block to csr
-          if ((kern->io.debug_verbosity) >= 2) {
-            print_invocation_image(
-                kern, image->arg_value, image->arg_value_size, size_to_write,
-                (unsigned int)(offset + image_size_static), false, true, step);
-          }
+          print_invocation_image(
+              kern, image->arg_value, image->arg_value_size, size_to_write,
+              (unsigned int)(offset + image_size_static), false, true, step);
           acl_kernel_cra_write_block(
               kern, accel_id, offset + (unsigned int)(image_size_static + step),
               (unsigned int *)(image->arg_value + step), size_to_write);
