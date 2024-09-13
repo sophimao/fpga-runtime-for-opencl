@@ -1081,7 +1081,7 @@ void acl_usm_memcpy(void *, acl_device_op_t *op) {
   }
 
   acl_set_device_op_execution_status(op, CL_SUBMITTED);
-  acl_set_device_op_execution_status(op, CL_RUNNING);
+  // Running status will be set by the hal copy_*mem_to_*mem functions
 
   const acl_hal_t *const hal = acl_get_hal();
   if (event->cmd.info.usm_xfer.src_on_host) {
