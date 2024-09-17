@@ -6319,35 +6319,7 @@ static void l_mem_transfer_buffer_explicitly(cl_context context,
       // If the destination has been automapped, and this operation will not
       // unmap the object, then undo the automap before continuing.
       if (cmd.type != CL_COMMAND_UNMAP_MEM_OBJECT) {
-        acl_command_info_t dst_unmap_cmd;
-        dst_unmap_cmd.type = CL_COMMAND_UNMAP_MEM_OBJECT;
-        dst_unmap_cmd.info.mem_xfer.is_auto_map = 1;
-        if (dst_mem->flags & CL_MEM_READ_ONLY) {
-          dst_unmap_cmd.info.mem_xfer.map_flags = CL_MAP_READ;
-        } else {
-          dst_unmap_cmd.info.mem_xfer.map_flags = CL_MAP_WRITE;
-        }
-        dst_unmap_cmd.info.mem_xfer.src_mem = context->unwrapped_host_mem;
-        dst_unmap_cmd.info.mem_xfer.src_offset[0] =
-            (size_t)((char *)dst_mem->host_mem.aligned_ptr -
-                     (char *)ACL_MEM_ALIGN);
-        dst_unmap_cmd.info.mem_xfer.src_offset[1] = 0;
-        dst_unmap_cmd.info.mem_xfer.src_offset[2] = 0;
-        dst_unmap_cmd.info.mem_xfer.dst_mem = dst_mem;
-        dst_unmap_cmd.info.mem_xfer.dst_offset[0] = 0;
-        dst_unmap_cmd.info.mem_xfer.dst_offset[1] = 0;
-        dst_unmap_cmd.info.mem_xfer.dst_offset[2] = 0;
-        dst_unmap_cmd.info.mem_xfer.cb[0] = dst_mem->size;
-        dst_unmap_cmd.info.mem_xfer.cb[1] = 1;
-        dst_unmap_cmd.info.mem_xfer.cb[2] = 1;
-        dst_unmap_cmd.info.mem_xfer.src_row_pitch =
-            dst_unmap_cmd.info.mem_xfer.cb[0];
-        dst_unmap_cmd.info.mem_xfer.src_slice_pitch = 1;
-        dst_unmap_cmd.info.mem_xfer.dst_row_pitch =
-            dst_unmap_cmd.info.mem_xfer.cb[0];
-        dst_unmap_cmd.info.mem_xfer.dst_slice_pitch = 1;
-        l_mem_transfer_buffer_explicitly(context, NULL, physical_device_id,
-                                         dst_unmap_cmd);
+        auto_unmap_mem(context, physical_device_id, dst_mem, NULL);
         dst_base = l_get_address_of_writable_copy(dst_mem, physical_device_id,
                                                   &dst_on_host, CL_FALSE);
       }
