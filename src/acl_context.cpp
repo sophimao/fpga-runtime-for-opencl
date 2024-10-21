@@ -82,9 +82,10 @@ CL_API_ENTRY cl_context CL_API_CALL clCreateContextIntelFPGA(
     const cl_context_properties *properties, cl_uint num_devices,
     const cl_device_id *devices, acl_notify_fn_t pfn_notify, void *user_data,
     cl_int *errcode_ret) {
+  acl_assert_locked();
+
   cl_context context;
   cl_int status;
-  std::scoped_lock lock{acl_mutex_wrapper};
 
   context = l_create_context(properties, pfn_notify, user_data, &status);
   if (context == NULL || status != CL_SUCCESS) {
@@ -536,8 +537,9 @@ static cl_context l_create_context(const cl_context_properties *properties,
 
 static cl_int l_finalize_context(cl_context context, cl_uint num_devices,
                                  const cl_device_id *devices) {
+  acl_assert_locked();
+
   cl_int status;
-  std::scoped_lock lock{acl_mutex_wrapper};
 
   status = acl_get_hal()->try_devices(num_devices, devices, &acl_platform);
   if (status) {
