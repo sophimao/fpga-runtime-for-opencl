@@ -478,10 +478,10 @@ int acl_context_uses_device(cl_context context, cl_device_id device) {
 static cl_context l_create_context(const cl_context_properties *properties,
                                    acl_notify_fn_t pfn_notify, void *user_data,
                                    cl_int *errcode_ret) {
+  acl_assert_locked();
+
   cl_context context = 0;
   cl_int status;
-
-  std::scoped_lock lock{acl_mutex_wrapper};
 
   if (user_data && !pfn_notify) {
     BAIL(CL_INVALID_VALUE);
@@ -536,8 +536,9 @@ static cl_context l_create_context(const cl_context_properties *properties,
 
 static cl_int l_finalize_context(cl_context context, cl_uint num_devices,
                                  const cl_device_id *devices) {
+  acl_assert_locked();
+
   cl_int status;
-  std::scoped_lock lock{acl_mutex_wrapper};
 
   status = acl_get_hal()->try_devices(num_devices, devices, &acl_platform);
   if (status) {
