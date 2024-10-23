@@ -21,18 +21,6 @@
 #include <acl_thread.h>
 #include <acl_util.h>
 
-#undef TEST_PROFILING_HARDWARE
-#ifdef TEST_PROFILING_HARDWARE
-extern int acl_hal_mmd_reset_profile_counters(unsigned int physical_device_id,
-                                              unsigned int accel_id);
-extern int acl_hal_mmd_get_profile_data(unsigned int physical_device_id,
-                                        unsigned int accel_id, uint64_t *data,
-                                        unsigned int length);
-extern int acl_hal_mmd_disable_profile_counters(unsigned int physical_device_id,
-                                                unsigned int accel_id);
-extern int acl_hal_mmd_enable_profile_counters(unsigned int physical_device_id,
-                                               unsigned int accel_id);
-#endif
 extern int acl_process_profiler_scan_chain(acl_device_op_t *op);
 extern int
 acl_process_autorun_profiler_scan_chain(unsigned int physical_device_id,
@@ -1451,18 +1439,6 @@ static void acl_kernel_if_update_status_finish(acl_kernel_if *kern,
                                                const unsigned int accel_id,
                                                const int activation_id,
                                                const unsigned int printf_size) {
-#ifdef TEST_PROFILING_HARDWARE
-  // Test readback of fake profile data using the acl_hal_mmd function that
-  // would be called from the acl runtime.
-  ACL_KERNEL_IF_DEBUG_MSG(kern, ":: testing profile hardware on accel_id=%u.\n",
-                          accel_id);
-
-  uint64_t data[10];
-  acl_hal_mmd_get_profile_data(kern->physical_device_id, accel_id, data, 6);
-  acl_hal_mmd_reset_profile_counters(kern->physical_device_id, accel_id);
-  acl_hal_mmd_get_profile_data(kern->physical_device_id, accel_id, data, 6);
-#endif
-
   // Just clear the "done" bit.  The "go" bit should already have been
   // cleared, but this is harmless anyway.
   // Since csr version 4, done bit is cleared when finish counter is read.
